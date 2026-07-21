@@ -45,6 +45,10 @@ The application was built with [Next.js](https://nextjs.org/), [PixiJS](https://
 
 ## What's New
 
+### v0.24.1 (July 2026)
+
+- **Bug fix — API URL env vars now respected everywhere.** The floor-config hook (`useFloorConfig.ts`) and the simulation scripts (`scripts/scenarios/_base.py`) hardcoded `http://localhost:8000`, so they silently broke when the backend ran on another port (e.g. 8000 was already in use). They now read `NEXT_PUBLIC_API_URL` and `CLAUDE_OFFICE_API_URL` like the rest of the stack; standard-port defaults are unchanged. Thanks [@rasulboliev](https://github.com/rasulboliev) ([PR #55](https://github.com/paulrobello/claude-office/pull/55)).
+
 ### v0.24.0 (July 2026)
 
 - **⚠ Breaking — OpenCode plugin remote backend is now opt-in**: a non-localhost `CLAUDE_OFFICE_API_URL` is clamped to the local default unless `CLAUDE_OFFICE_ALLOW_REMOTE=1` is set (matching the Claude Code hooks; event payloads carry tool I/O and file paths). **If you point the plugin at a remote server, set `CLAUDE_OFFICE_ALLOW_REMOTE=1` or events silently post to localhost.**

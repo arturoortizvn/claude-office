@@ -4,6 +4,12 @@ All notable changes to Claude Office Visualizer are documented here.
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-07-21
+
+### Fixed
+
+- **API URL env vars now respected everywhere.** `frontend/src/hooks/useFloorConfig.ts` hardcoded `http://localhost:8000` instead of reading `NEXT_PUBLIC_API_URL` (so floor-config fetches hit the wrong port when the backend ran elsewhere), and `scripts/scenarios/_base.py` hardcoded its API URL instead of reading `CLAUDE_OFFICE_API_URL` (so `make simulate` / `simulate_events.py` silently failed to connect to a non-default port). Both now read the same env vars the rest of the stack already uses (`NEXT_PUBLIC_API_URL` for the frontend, `CLAUDE_OFFICE_API_URL` for the simulation scripts), with the previous values kept as defaults. ([PR #55](https://github.com/paulrobello/claude-office/pull/55), thanks [@rasulboliev](https://github.com/rasulboliev))
+
 ## [0.24.0] - 2026-07-08
 
 ### ⚠ Breaking Changes
