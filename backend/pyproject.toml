@@ -5,27 +5,27 @@ description = "Real-time pixel art visualization of Claude Code operations"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "fastapi>=0.136.1",
-    "uvicorn[standard]>=0.46.0",
-    "websockets>=16.0",
-    "sqlalchemy>=2.0.49",
-    "pydantic>=2.12.5",
+    "fastapi>=0.139.2",
+    "uvicorn[standard]>=0.51.0",
+    "websockets>=16.1.1",
+    "sqlalchemy>=2.0.51",
+    "pydantic>=2.13.4",
     "pydantic-settings>=2.14.2",
-    "python-multipart>=0.0.27",
+    "python-multipart>=0.0.32",
     "httpx>=0.28.1",
     "aiosqlite>=0.22.1",
     "rich>=15.0.0",
-    "greenlet>=3.5.0",
+    "greenlet>=3.5.3",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=9.0.2",
-    "pytest-asyncio>=1.3.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
-    "ruff>=0.15.8",
-    "pyright>=1.1.408",
-    "pre-commit>=4.5.1",
+    "ruff>=0.15.22",
+    "pyright>=1.1.411",
+    "pre-commit>=4.6.0",
 ]
 
 [build-system]
@@ -72,12 +72,12 @@ packages = [
 
 [dependency-groups]
 dev = [
-    "pyright>=1.1.409",
-    "pytest>=9.0.3",
-    "pytest-asyncio>=1.3.0",
+    "pyright>=1.1.411",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
     "pytest-timeout>=2.4.0",
-    "ruff>=0.15.12",
+    "ruff>=0.15.22",
     "pre-commit>=4.6.0",
     # ARC-010: contract test imports hooks' event_mapper, which depends on
     # defusedxml for <task-notification> parsing. Test-only; not a runtime dep.
@@ -85,5 +85,5 @@ dev = [
     # Stub-only peer dep for Starlette/FastAPI TestClient typing (pyright).
     # NOT unused: removing it makes `make typecheck` fail on TestClient.get/post
     # in the test suite. Kept intentionally. (Re-evaluates ARC-022's "unused" call.)
-    "httpx2>=2.4.0",
+    "httpx2>=2.7.0",
 ]

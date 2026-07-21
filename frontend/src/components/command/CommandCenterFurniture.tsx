@@ -18,13 +18,7 @@ import {
 // ============================================================================
 
 type DeskItem =
-  | "mug"
-  | "lamp"
-  | "penholder"
-  | "8ball"
-  | "rubiks"
-  | "duck"
-  | "thermos";
+  "mug" | "lamp" | "penholder" | "8ball" | "rubiks" | "duck" | "thermos";
 const ITEM_SEQUENCE: DeskItem[] = [
   "lamp",
   "mug",
