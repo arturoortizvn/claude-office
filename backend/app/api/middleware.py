@@ -21,7 +21,11 @@ from app.config import get_settings
 # calls return the same instance, so call-time attribute access is identical.
 settings = get_settings()
 
-_LOCALHOST_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
+# Docker Desktop rewrites the peer address of host requests to the compose
+# bridge gateway; the published port stays bound to 127.0.0.1 on the host.
+_LOCALHOST_HOSTS = frozenset(
+    {"127.0.0.1", "::1", "localhost", "testclient", "172.29.0.1"}
+)
 
 
 class LocalhostOnlyMiddleware(BaseHTTPMiddleware):

@@ -47,3 +47,12 @@ services:
 volumes:
   claude-office-db:
     name: claude-office-db
+
+# Pinned so the gateway address stays 172.29.0.1, which the backend's
+# localhost allowlist accepts (see app/api/middleware.py).
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.29.0.0/16
+
