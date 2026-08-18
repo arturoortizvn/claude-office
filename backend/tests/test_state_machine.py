@@ -1,7 +1,8 @@
 """Tests for state machine logic."""
 
 from app.core.state_machine import OfficePhase, StateMachine
-from app.models.agents import AgentState, BossState
+from app.models.agents import Agent, AgentState, BossState
+from app.models.events import AgentEventData
 
 
 class TestStateMachineInit:
@@ -185,3 +186,61 @@ class TestOfficePhase:
         """All phases should have unique values."""
         values = [p.value for p in OfficePhase]
         assert len(values) == len(set(values))
+
+
+class TestDeskAllocation:
+    """Tests for desk assignment in create_agent."""
+
+    @staticmethod
+    def _spawn(sm: StateMachine, agent_id: str) -> Agent:
+        agent = sm.create_agent(AgentEventData(agent_id=agent_id, agent_name=agent_id))
+        sm.agents[agent.id] = agent
+        return agent
+
+    def test_new_agent_never_takes_an_occupied_desk(self) -> None:
+        """A desk freed by a departure must not be handed to a still-seated agent."""
+        sm = StateMachine()
+        for agent_id in ("a1", "a2", "a3"):
+            self._spawn(sm, agent_id)
+        sm.remove_agent("a1")
+
+        self._spawn(sm, "a4")
+
+        desks = [agent.desk for agent in sm.agents.values()]
+        assert len(desks) == len(set(desks))
+
+    def test_desk_is_drawn_from_the_free_pool(self) -> None:
+        """The assigned desk is always one of the desks nobody occupies."""
+        for _ in range(50):
+            sm = StateMachine()
+            for agent_id in ("a1", "a2", "a3", "a4"):
+                self._spawn(sm, agent_id)
+            sm.remove_agent("a1")
+            sm.remove_agent("a2")
+            occupied = {agent.desk for agent in sm.agents.values()}
+
+            new_agent = self._spawn(sm, "a5")
+
+            assert new_agent.desk is not None
+            assert new_agent.desk not in occupied
+            assert 1 <= new_agent.desk <= sm.MAX_AGENTS
+
+    def test_desk_choice_varies_across_spawns(self) -> None:
+        """Allocation is random, not the lowest free desk."""
+        chosen: set[int | None] = set()
+        for _ in range(50):
+            sm = StateMachine()
+            chosen.add(self._spawn(sm, "a1").desk)
+
+        assert len(chosen) > 1
+
+    def test_allocates_a_unique_desk_when_the_grid_is_full(self) -> None:
+        """With every desk taken, allocation still yields a free number."""
+        sm = StateMachine()
+        for index in range(sm.MAX_AGENTS):
+            self._spawn(sm, f"a{index}")
+        occupied = {agent.desk for agent in sm.agents.values()}
+
+        new_agent = sm.create_agent(AgentEventData(agent_id="overflow"))
+
+        assert new_agent.desk not in occupied

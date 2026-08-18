@@ -1,4 +1,5 @@
 import logging
+import random
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -821,7 +822,16 @@ class StateMachine:
             color=color,
             number=count,
             state=AgentState.ARRIVING,
-            desk=count,
+            desk=self._allocate_desk(),
             bubble=None,
             current_task=task,
         )
+
+    def _allocate_desk(self) -> int:
+        occupied = {agent.desk for agent in self.agents.values() if agent.desk is not None}
+        free = [desk for desk in range(1, self.MAX_AGENTS + 1) if desk not in occupied]
+        if not free:
+            # Callers gate on MAX_AGENTS, so the grid is only full if one bypassed
+            # that guard; seat off-grid rather than stack two agents on one desk.
+            return max(occupied) + 1
+        return random.choice(free)
