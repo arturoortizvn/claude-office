@@ -23,9 +23,7 @@ settings = get_settings()
 
 # Docker Desktop rewrites the peer address of host requests to the compose
 # bridge gateway; the published port stays bound to 127.0.0.1 on the host.
-_LOCALHOST_HOSTS = frozenset(
-    {"127.0.0.1", "::1", "localhost", "testclient", "172.29.0.1"}
-)
+_LOCALHOST_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "testclient", "172.29.0.1"})
 
 
 class LocalhostOnlyMiddleware(BaseHTTPMiddleware):
