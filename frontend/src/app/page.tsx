@@ -13,6 +13,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import { useState, useEffect, useCallback } from "react";
 import { useWebSocketEvents } from "@/hooks/useWebSocketEvents";
 import { useSessions } from "@/hooks/useSessions";
@@ -419,7 +420,14 @@ export default function V2TestPage(): React.ReactNode {
               isMobile ? "text-lg" : "text-2xl"
             }`}
           >
-            <span className="text-orange-500">Claude</span>{" "}
+            <Image
+              src="/viewnear-logo.png"
+              alt="viewnear"
+              width={421}
+              height={71}
+              priority
+              className={isMobile ? "h-6 w-auto" : "h-7 w-auto"}
+            />
             {!isMobile && t("app.title")}
             {!isMobile && (
               <span className="text-xs font-mono font-normal px-2 py-0.5 bg-slate-800 rounded text-slate-400 border border-slate-700">
