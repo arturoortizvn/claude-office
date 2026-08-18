@@ -167,6 +167,34 @@ class TestApiKeyMiddleware:
         finally:
             settings.CLAUDE_OFFICE_API_KEY = original_key
 
+    def test_rejection_keeps_cors_headers(self) -> None:
+        """A 401 must still carry CORS headers, or the browser reports it as a
+        CORS failure and the real status never reaches the caller."""
+        from app.config import get_settings
+
+        settings = get_settings()
+        original_key = settings.CLAUDE_OFFICE_API_KEY
+        settings.CLAUDE_OFFICE_API_KEY = "test-secret-key"
+
+        from app.main import app
+
+        try:
+            client = TestClient(app)
+            resp = client.post(
+                "/api/v1/events",
+                json={
+                    "event_type": "session_start",
+                    "session_id": "test-cors-on-401",
+                    "timestamp": "2026-01-01T00:00:00",
+                    "data": {},
+                },
+                headers={"Origin": "http://localhost:3000", "X-API-Key": "wrong-key"},
+            )
+            assert resp.status_code == 401
+            assert resp.headers.get("access-control-allow-origin") == "http://localhost:3000"
+        finally:
+            settings.CLAUDE_OFFICE_API_KEY = original_key
+
     def test_health_endpoint_skips_auth(self) -> None:
         """Health endpoint should not require an API key."""
         from app.config import get_settings

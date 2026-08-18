@@ -174,6 +174,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(LocalhostOnlyMiddleware)
+app.add_middleware(ApiKeyMiddleware)
+
+# Registered last so it wraps the two above: Starlette makes the last-added
+# middleware outermost, and a rejection they return early only picks up CORS
+# headers on the way back out. Without that the browser blocks the 401/403 and
+# surfaces it as a CORS error instead of the real status.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.BACKEND_CORS_ORIGINS,
@@ -181,9 +188,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-app.add_middleware(LocalhostOnlyMiddleware)
-app.add_middleware(ApiKeyMiddleware)
 
 app.include_router(events.router, prefix=f"{settings.API_V1_STR}")
 app.include_router(floors.router, prefix=f"{settings.API_V1_STR}")
