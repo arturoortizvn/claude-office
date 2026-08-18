@@ -16,6 +16,8 @@ import {
 } from "react";
 import { Container, Graphics } from "pixi.js";
 
+import { normalizeMarqueeText } from "@/utils/marqueeText";
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -39,11 +41,7 @@ export function MarqueeText({
   const [maskGraphics, setMaskGraphics] = useState<Graphics | null>(null);
   const textContainerRef = useRef<Container | null>(null);
 
-  // Normalize text to single line (remove newlines, carriage returns, collapse whitespace)
-  const normalizedText = text
-    .replace(/[\r\n]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  const normalizedText = normalizeMarqueeText(text);
 
   // Estimate text width (approx 5.5px per char at fontSize 9)
   const estimatedTextWidth = normalizedText.length * 5.5;
