@@ -1,12 +1,46 @@
 import importlib.metadata
+import os
 import secrets
-from functools import lru_cache
+from functools import cache, lru_cache
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _BACKEND_DIR = Path(__file__).parent.parent.resolve()
 _DEFAULT_DB_PATH = _BACKEND_DIR / "visualizer.db"
+
+
+def _load_or_create_auto_key(path: Path) -> str:
+    """Return the persisted auto-generated token, creating it on first use.
+
+    Persisted because regenerating per process silently revokes the token the
+    browser holds, and uvicorn --reload restarts on every backend edit. Falls
+    back to an ephemeral key when the location is not writable.
+    """
+    try:
+        existing = path.read_text().strip()
+        if existing:
+            return existing
+    except OSError:
+        pass
+
+    key = secrets.token_hex(32)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        return path.read_text().strip()  # another worker won the race
+    except OSError:
+        return key
+    with os.fdopen(fd, "w") as handle:
+        handle.write(key)
+    return key
+
+
+@cache
+def _auto_api_key(path: str) -> str:
+    """Cache the token per path so request-path auth never touches the disk."""
+    return _load_or_create_auto_key(Path(path))
 
 
 def _resolve_version() -> str:
@@ -101,10 +135,9 @@ class Settings(BaseSettings):
     # and WebSocket non-browser connections.
     CLAUDE_OFFICE_API_KEY: str = ""
 
-    # Auto-generated per-launch token. Used as the effective API key when
-    # CLAUDE_OFFICE_API_KEY is not explicitly set. This ensures state-changing
-    # endpoints always require an API key even in the default configuration.
-    _auto_api_key: str = secrets.token_hex(32)
+    # Where the auto-generated token is persisted when CLAUDE_OFFICE_API_KEY is
+    # not set. Override in containers to point at a mounted volume.
+    API_KEY_FILE: str = str(_BACKEND_DIR / ".api-key")
 
     # Rich tracebacks render local variables and full filesystem paths into logs.
     # Useful in development; disable for shared/production deployments (SEC-006).
@@ -112,8 +145,8 @@ class Settings(BaseSettings):
 
     @property
     def effective_api_key(self) -> str:
-        """Return the configured API key, or the per-launch auto-generated token."""
-        return self.CLAUDE_OFFICE_API_KEY or self._auto_api_key
+        """Return the configured API key, or the persisted auto-generated token."""
+        return self.CLAUDE_OFFICE_API_KEY or _auto_api_key(self.API_KEY_FILE)
 
     @property
     def has_explicit_key(self) -> bool:

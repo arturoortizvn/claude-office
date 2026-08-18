@@ -30,6 +30,8 @@ services:
       - CLAUDE_PATH_CONTAINER=/claude-data
       # Database location (use mounted volume for persistence)
       - DATABASE_URL=sqlite+aiosqlite:////app/data/visualizer.db
+      # Same volume: the auto-generated token must outlive the container
+      - API_KEY_FILE=/app/data/.api-key
       # Claude API settings (optional - enables AI summaries)
       - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
       - SUMMARY_ENABLED=${SUMMARY_ENABLED:-true}
