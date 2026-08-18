@@ -122,12 +122,11 @@ export function EmployeeOfTheMonth(): ReactNode {
       {/* Name plate text */}
       <pixiContainer x={60} y={144} scale={0.5}>
         <pixiText
-          text="GUSTAVO CÁRDENAS"
+          text="GUSTAVO"
           anchor={0.5}
           style={{
-            // smaller than the other plates so the full name fits the 90px nameplate
             fontFamily: '"Arial Black", Arial, sans-serif',
-            fontSize: 14,
+            fontSize: 20,
             fontWeight: "bold",
             fill: "#1a1a1a",
           }}
