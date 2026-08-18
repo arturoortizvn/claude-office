@@ -92,6 +92,7 @@ claude_scratch/
 .gemini-clipboard/
 
 # --- Local Data ---
+backend/.api-key
 backend/visualizer.db
 backend/visualizer.db-shm
 backend/visualizer.db-wal

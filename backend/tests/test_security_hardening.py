@@ -1,5 +1,9 @@
 """Tests for security hardening (issue #37 + #41)."""
 
+import os
+import stat
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -211,6 +215,46 @@ class TestApiKeyMiddleware:
             assert resp.status_code == 200
         finally:
             settings.CLAUDE_OFFICE_API_KEY = original_key
+
+
+class TestAutoApiKeyPersistence:
+    """The auto-generated token must outlive the process that created it.
+
+    Regenerating it on every boot silently revokes the browser's stored token,
+    and uvicorn --reload restarts on every backend edit.
+    """
+
+    @staticmethod
+    def _read_key_in_fresh_process(key_file: Path) -> str:
+        """Return effective_api_key from a brand-new interpreter (a "restart")."""
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from app.config import get_settings; print(get_settings().effective_api_key)",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=Path(__file__).parent.parent,
+            env={**os.environ, "API_KEY_FILE": str(key_file), "CLAUDE_OFFICE_API_KEY": ""},
+            check=True,
+        )
+        return proc.stdout.strip()
+
+    def test_key_survives_restart(self, tmp_path: Path) -> None:
+        key_file = tmp_path / ".api-key"
+        first = self._read_key_in_fresh_process(key_file)
+        second = self._read_key_in_fresh_process(key_file)
+
+        assert first, "no key generated"
+        assert first == second, "restart invalidated the browser's token"
+
+    def test_key_file_is_owner_only(self, tmp_path: Path) -> None:
+        key_file = tmp_path / ".api-key"
+        self._read_key_in_fresh_process(key_file)
+
+        assert key_file.exists()
+        assert stat.S_IMODE(key_file.stat().st_mode) == 0o600
 
 
 # ---------------------------------------------------------------------------
