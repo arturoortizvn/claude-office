@@ -211,6 +211,7 @@ make dev
 | `make dev` | Start backend and frontend in parallel |
 | `make dev-tmux` | Start in tmux with separate windows (recommended) |
 | `make dev-tmux-kill` | Kill the tmux session |
+| `make ui` | Open the UI in a browser with the API token injected |
 | `make checkall` | Run format, lint, typecheck, and tests |
 | `make test` | Run all test suites without the other checks |
 | `make simulate` | Run event simulation script |
