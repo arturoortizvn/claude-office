@@ -10,6 +10,7 @@ merged kanban board.
 from __future__ import annotations
 
 import logging
+import random
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -102,6 +103,7 @@ class RoomOrchestrator:
     def __init__(self, room_id: str) -> None:
         self.room_id = room_id
         self._sessions: dict[str, _SessionEntry] = {}
+        self._desks: dict[str, int] = {}
 
     # ------------------------------------------------------------------
     # Session registry
@@ -202,7 +204,7 @@ class RoomOrchestrator:
                 linear_id=task.linear_id,
             )
 
-        desk_number = 0
+        teammate_index = 0
         for session_id, entry in self._sessions.items():
             if entry.is_lead:
                 continue
@@ -217,9 +219,9 @@ class RoomOrchestrator:
                     id=tm_id,
                     name=entry.teammate_name or f"Teammate-{session_id[:4]}",
                     color=entry.color,
-                    number=desk_number,
+                    number=teammate_index,
                     state=agent_state,
-                    desk=desk_number,
+                    desk=None,
                     bubble=tm_state.boss.bubble,
                     current_task=tm_state.boss.current_task,
                     character_type="teammate",
@@ -249,7 +251,7 @@ class RoomOrchestrator:
                     linear_id=task.linear_id,
                 )
 
-            desk_number += 1
+            teammate_index += 1
 
         # Infer in_progress for active sessions
         self._infer_in_progress(all_kanban)
@@ -259,6 +261,7 @@ class RoomOrchestrator:
             kanban_tasks=list(all_kanban.values()),
         )
         desk_count = max(8, len(merged_agents) + 2)
+        self._seat(merged_agents, desk_count)
 
         return GameState(
             session_id=lead_entry.session_id,
@@ -282,6 +285,27 @@ class RoomOrchestrator:
             whiteboard_data=merged_whiteboard,
             conversation=lead_state.conversation,
         )
+
+    def _seat(self, agents: list[Agent], capacity: int) -> None:
+        """Give every merged agent a stable, unique desk.
+
+        Each session numbers its own subagents from 1, so the raw numbers
+        collide once sessions are merged; seating is a room-level concern.
+        Assignments are remembered because merge() runs on every event —
+        recomputing them would make everyone hop desks whenever one agent
+        arrives or leaves. A departed agent frees its desk for the next one.
+        """
+        live = {agent.id for agent in agents}
+        self._desks = {aid: desk for aid, desk in self._desks.items() if aid in live}
+        taken = set(self._desks.values())
+        for agent in agents:
+            desk = self._desks.get(agent.id)
+            if desk is None:
+                free = [d for d in range(1, capacity + 1) if d not in taken]
+                desk = random.choice(free) if free else max(taken, default=0) + 1
+                self._desks[agent.id] = desk
+                taken.add(desk)
+            agent.desk = desk
 
     def _infer_in_progress(self, tasks: dict[str, KanbanTask]) -> None:
         """Mark the first pending task as in_progress for each active session."""
