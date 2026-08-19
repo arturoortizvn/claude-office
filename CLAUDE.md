@@ -74,5 +74,7 @@ See `.claude/skills/*/SKILL.md` for details.
 | OpenCode plugin | `opencode-plugin/package.json` |
 
 To bump all manual locations at once: `make bump-version VERSION=x.y.z` (rewrites the
-manual rows above; the two derived rows — backend `VERSION` and hooks `__version__` —
-follow the installed package automatically). CI cross-check: `make version-check` (ARC-021).
+manual rows above, then regenerates the root, backend and hooks `uv.lock`; the two derived
+rows — backend `VERSION` and hooks `__version__` — follow the installed package
+automatically). CI cross-check: `make version-check` (ARC-021), which fails on both a
+version mismatch and a lockfile still pinning an older version.
