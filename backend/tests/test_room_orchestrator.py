@@ -256,3 +256,79 @@ class TestBuildOverview:
         assert entry.current_task == "refactor auth"
         assert (entry.todo_done, entry.todo_total) == (1, 3)
         assert entry.subagent_count == 2
+
+
+class TestDeskAllocation:
+    """Tests for desk assignment across merged sessions."""
+
+    @staticmethod
+    def _orch_with_subagents() -> tuple[RoomOrchestrator, dict[str, StateMachine]]:
+        orch = RoomOrchestrator("room-1")
+        lead_sm = _make_sm(team_name="squad", is_lead=True)
+        lead_sm.agents["lead-sub"] = Agent(
+            id="lead-sub", color="#aaa", number=1, state=AgentState.WORKING, desk=1
+        )
+        orch.add_session("lead-sess", lead_sm)
+        teammates: dict[str, StateMachine] = {}
+        for index in (1, 2):
+            tm_sm = _make_sm(team_name="squad", teammate_name=f"tm{index}")
+            tm_sm.agents[f"tm{index}-sub"] = Agent(
+                id=f"tm{index}-sub", color="#bbb", number=1, state=AgentState.WORKING, desk=1
+            )
+            orch.add_session(f"tm{index}-sess", tm_sm)
+            teammates[f"tm{index}"] = tm_sm
+        return orch, teammates
+
+    def test_agents_from_different_sessions_never_share_a_desk(self) -> None:
+        """Every session numbers its own subagents from 1, so raw desks collide."""
+        orch, _ = self._orch_with_subagents()
+
+        state = orch.merge()
+
+        assert state is not None
+        desks = [agent.desk for agent in state.agents]
+        assert len(desks) == len(set(desks))
+
+    def test_no_agent_is_seated_at_desk_zero(self) -> None:
+        """Desk 0 is falsy in the frontend, which reads it as 'no desk at all'."""
+        orch, _ = self._orch_with_subagents()
+
+        state = orch.merge()
+
+        assert state is not None
+        assert all(agent.desk is not None and agent.desk >= 1 for agent in state.agents)
+
+    def test_a_desk_survives_another_agent_leaving(self) -> None:
+        """merge() runs on every event; seats must not shuffle when one agent goes."""
+        orch, teammates = self._orch_with_subagents()
+        first = orch.merge()
+        assert first is not None
+        before = {agent.id: agent.desk for agent in first.agents}
+
+        teammates["tm1"].agents.pop("tm1-sub")
+        second = orch.merge()
+
+        assert second is not None
+        after = {agent.id: agent.desk for agent in second.agents}
+        for agent_id, desk in after.items():
+            assert desk == before[agent_id]
+
+    def test_a_vacated_desk_returns_to_the_pool(self) -> None:
+        """A departed agent must not hold its desk forever."""
+        orch, teammates = self._orch_with_subagents()
+        first = orch.merge()
+        assert first is not None
+        vacated = next(a.desk for a in first.agents if a.id == "tm1-sub")
+
+        teammates["tm1"].agents.pop("tm1-sub")
+        orch.merge()
+        teammates["tm1"].agents["tm1-new"] = Agent(
+            id="tm1-new", color="#ccc", number=1, state=AgentState.WORKING, desk=1
+        )
+        third = orch.merge()
+
+        assert third is not None
+        free_desks = {vacated} | {
+            d for d in range(1, 20) if d not in {a.desk for a in first.agents}
+        }
+        assert next(a.desk for a in third.agents if a.id == "tm1-new") in free_desks
