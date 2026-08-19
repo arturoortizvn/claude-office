@@ -2,7 +2,7 @@ import type { TranslationKey } from "./en";
 
 const es: Record<TranslationKey, string> = {
   // App
-  "app.title": "Visualizador de Oficina",
+  "app.title": "Oficina",
   "app.initializingSystems": "Inicializando sistemas...",
 
   // Header Controls
