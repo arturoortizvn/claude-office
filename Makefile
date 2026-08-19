@@ -2,7 +2,7 @@
 	hooks-install hooks-uninstall hooks-reinstall hooks-status hooks-logs hooks-logs-follow hooks-logs-clear \
 	hooks-debug-on hooks-debug-off clean clean-db clean-all \
 	opencode-install opencode-uninstall opencode-reinstall opencode-build \
-	dev-tmux dev-tmux-kill dev-tmux-backend dev-tmux-frontend \
+	dev-tmux dev-tmux-kill dev-tmux-backend dev-tmux-frontend ui \
 	build-static frontend-build-static \
 	docker-build docker-up docker-down docker-logs docker-shell \
 	pre-commit pre-commit-update depsupdate depsshow uv-lock uv-sync setup resetup remove-venv \
@@ -11,6 +11,11 @@
 # Detect package manager: prefer bun if available, otherwise use npm
 PKG_MGR := $(shell command -v bun >/dev/null 2>&1 && echo "bun" || echo "npm")
 PKG_INSTALL := $(shell command -v bun >/dev/null 2>&1 && echo "bun install" || echo "npm install")
+
+# Browser opener: macOS ships `open`, Linux desktops `xdg-open`
+OPENER := $(shell command -v open >/dev/null 2>&1 && echo open || echo xdg-open)
+UI_URL ?= http://localhost:3000
+API_KEY_FILE ?= backend/.api-key
 
 install:			# Install all component dependencies
 	cd backend && uv sync
@@ -29,6 +34,17 @@ backend:			# Start backend dev server
 
 frontend:			# Start frontend dev server
 	make -C frontend dev
+
+ui:			# Open the UI in a browser, API token already injected
+	@key="$${CLAUDE_OFFICE_API_KEY:-$$(cat $(API_KEY_FILE) 2>/dev/null)}"; \
+	if [ -z "$$key" ]; then \
+		echo "No API token yet. Start the backend once (make backend) to generate $(API_KEY_FILE),"; \
+		echo "or set CLAUDE_OFFICE_API_KEY to use an explicit key."; \
+		exit 1; \
+	fi; \
+	url="$(UI_URL)/?token=$$key"; \
+	echo "$$url"; \
+	$(OPENER) "$$url"
 
 # Build static frontend and copy to backend for serving
 build-static frontend-build-static:

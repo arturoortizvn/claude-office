@@ -15,6 +15,7 @@ See [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) for s
 make install       # Install all dependencies
 make dev-tmux      # Run in tmux (recommended) - backend :8000, frontend :3000
 make dev-tmux-kill # Kill tmux session
+make ui            # Open the UI in a browser with the API token injected
 make checkall      # Lint, typecheck, test all components
 make simulate      # Run event simulation
 
