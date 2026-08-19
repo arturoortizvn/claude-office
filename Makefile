@@ -209,6 +209,9 @@ ifndef VERSION
 	$(error VERSION is required: make bump-version VERSION=x.y.z)
 endif
 	uv run --no-project python scripts/bump_version.py $(VERSION)
+	uv lock
+	cd backend && uv lock
+	cd hooks && uv lock
 
 version-check:			# Verify all version locations agree (CI-friendly)
 	uv run --no-project python scripts/bump_version.py --check
