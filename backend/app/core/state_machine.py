@@ -240,6 +240,11 @@ def _handle_pre_tool_use(sm: "StateMachine", event: AnyEvent) -> None:
         if parsed:
             sm.todos = parsed
 
+    if tool_name == "SendMessage" and (event.data.agent_id or "main") == "main":
+        recipient = (event.data.tool_input or {}).get("to")
+        if isinstance(recipient, str):
+            sm.resume_requests.add(recipient)
+
     if tool_name in ("Task", "Agent"):
         sm.phase = OfficePhase.DELEGATING
         sm.boss_state = BossState.DELEGATING
@@ -563,6 +568,10 @@ class StateMachine:
     agents: dict[str, Agent] = field(default_factory=_empty_agents)
     arrival_queue: list[str] = field(default_factory=_empty_str_list)
     handin_queue: list[str] = field(default_factory=_empty_str_list)
+    # Claude Code re-fires SubagentStart when a finished subagent resumes; only a
+    # resume the boss asked for via SendMessage should bring it back on screen.
+    departed_native_ids: set[str] = field(default_factory=lambda: cast(set[str], set()))
+    resume_requests: set[str] = field(default_factory=lambda: cast(set[str], set()))
     history: list[HistoryEntry] = field(default_factory=_empty_history_list)
     todos: list[TodoItem] = field(default_factory=_empty_todo_list)
     token_tracker: TokenTracker = field(default_factory=TokenTracker)
@@ -704,6 +713,9 @@ class StateMachine:
             agent_id: The identifier of the agent to remove.
         """
         if agent_id in self.agents:
+            native_id = self.agents[agent_id].native_id
+            if native_id:
+                self.departed_native_ids.add(native_id)
             del self.agents[agent_id]
         if agent_id in self.arrival_queue:
             self.arrival_queue.remove(agent_id)

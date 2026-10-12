@@ -129,6 +129,12 @@ async def handle_subagent_info(
     if not (transcript_path and native_agent_id):
         return
 
+    if native_agent_id in sm.departed_native_ids:
+        if native_agent_id not in sm.resume_requests:
+            logger.info(f"Ignoring automatic resume of departed agent {native_agent_id}")
+            return
+        sm.resume_requests.discard(native_agent_id)
+
     # Synthesise a SUBAGENT_START if we have no agent tracking this native ID
     # and there are no unlinked (native_id=None) agents already present.
     already_tracked = any(a.native_id == native_agent_id for a in sm.agents.values())
