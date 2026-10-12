@@ -206,9 +206,9 @@ async def handle_subagent_stop(
     # Use shared resolution logic with fallback linking
     resolved = resolve_agent_for_stop(
         agents=sm.agents,
-        arrival_queue=sm.arrival_queue,
         agent_id=event.data.agent_id,
         native_agent_id=event.data.native_agent_id,
+        transcript_path=event.data.agent_transcript_path,
     )
 
     if not resolved:

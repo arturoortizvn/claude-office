@@ -1,5 +1,8 @@
 """Tests for subagent resolution and fallback linking logic."""
 
+import json
+from pathlib import Path
+
 from app.core.state_machine import ResolvedAgent, resolve_agent_for_stop
 from app.models.agents import Agent, AgentState
 
@@ -20,17 +23,23 @@ def create_test_agent(
     )
 
 
+def write_meta(directory: Path, native_id: str, tool_use_id: str) -> str:
+    """Write a Claude Code subagent meta file and return its transcript path."""
+    transcript = directory / f"agent-{native_id}.jsonl"
+    transcript.write_text("")
+    (directory / f"agent-{native_id}.meta.json").write_text(json.dumps({"toolUseId": tool_use_id}))
+    return str(transcript)
+
+
 class TestResolveAgentForStop:
     """Tests for resolve_agent_for_stop function."""
 
     def test_direct_agent_id_match(self) -> None:
         """Should resolve by direct agent_id when present."""
         agents = {"agent_123": create_test_agent("agent_123", native_id="abc123")}
-        arrival_queue = ["agent_123"]
 
         result = resolve_agent_for_stop(
             agents=agents,
-            arrival_queue=arrival_queue,
             agent_id="agent_123",
             native_agent_id="abc123",
         )
@@ -46,12 +55,10 @@ class TestResolveAgentForStop:
             "agent_123": create_test_agent("agent_123", native_id="abc123"),
             "agent_456": create_test_agent("agent_456", native_id="def456"),
         }
-        arrival_queue = ["agent_123", "agent_456"]
 
         # Even though native_id matches agent_456, agent_id should win
         result = resolve_agent_for_stop(
             agents=agents,
-            arrival_queue=arrival_queue,
             agent_id="agent_123",
             native_agent_id="def456",  # This belongs to agent_456
         )
@@ -62,11 +69,9 @@ class TestResolveAgentForStop:
     def test_native_id_match(self) -> None:
         """Should resolve by native_id when agent_id is not provided."""
         agents = {"subagent_abc123": create_test_agent("subagent_abc123", native_id="abc123")}
-        arrival_queue = ["subagent_abc123"]
 
         result = resolve_agent_for_stop(
             agents=agents,
-            arrival_queue=arrival_queue,
             agent_id=None,
             native_agent_id="abc123",
         )
@@ -76,82 +81,55 @@ class TestResolveAgentForStop:
         assert result.agent.native_id == "abc123"
         assert not result.was_late_linked
 
-    def test_fallback_link_single_unlinked_agent(self) -> None:
-        """Should late-link a single unlinked agent when native_id not found."""
-        agents = {"subagent_xyz": create_test_agent("subagent_xyz", native_id=None)}
-        arrival_queue = ["subagent_xyz"]
+    def test_fallback_links_the_agent_named_in_the_transcript_meta(self, tmp_path: Path) -> None:
+        """Should late-link the agent whose tool_use_id the transcript meta names."""
+        agents = {
+            "subagent_toolu_old": create_test_agent("subagent_toolu_old", native_id=None),
+            "subagent_toolu_mine": create_test_agent("subagent_toolu_mine", native_id=None),
+        }
 
         result = resolve_agent_for_stop(
             agents=agents,
-            arrival_queue=arrival_queue,
             agent_id=None,
             native_agent_id="new_native_id",
+            transcript_path=write_meta(tmp_path, "new_native_id", "toolu_mine"),
         )
 
         assert result is not None
-        assert result.agent_id == "subagent_xyz"
+        assert result.agent_id == "subagent_toolu_mine"
         assert result.agent.native_id == "new_native_id"
         assert result.was_late_linked
+        assert agents["subagent_toolu_old"].native_id is None
 
-    def test_fallback_link_prefers_oldest_from_arrival_queue(self) -> None:
-        """When multiple unlinked agents exist, should link the oldest (FIFO)."""
-        agents = {
-            "agent_001": create_test_agent("agent_001", native_id=None),
-            "agent_002": create_test_agent("agent_002", native_id=None),
-            "agent_003": create_test_agent("agent_003", native_id="already_linked"),
-        }
-        arrival_queue = ["agent_001", "agent_002", "agent_003"]
+    def test_stop_without_transcript_meta_leaves_unlinked_agents_alone(
+        self, tmp_path: Path
+    ) -> None:
+        """A stop for an agent that never started here must not evict another agent."""
+        agents = {"subagent_toolu_1": create_test_agent("subagent_toolu_1", native_id=None)}
 
         result = resolve_agent_for_stop(
             agents=agents,
-            arrival_queue=arrival_queue,
             agent_id=None,
-            native_agent_id="new_native_id",
+            native_agent_id="phantom_native_id",
+            transcript_path=str(tmp_path / "agent-phantom_native_id.jsonl"),
         )
 
-        assert result is not None
-        # Should link agent_001 (first in arrival_queue with native_id=None)
-        assert result.agent_id == "agent_001"
-        assert result.agent.native_id == "new_native_id"
-        assert result.was_late_linked
+        assert result is None
+        assert agents["subagent_toolu_1"].native_id is None
 
-    def test_fallback_link_skips_already_linked_in_queue(self) -> None:
-        """Should skip agents with native_id already set."""
-        agents = {
-            "agent_linked": create_test_agent("agent_linked", native_id="existing123"),
-            "agent_unlinked": create_test_agent("agent_unlinked", native_id=None),
-        }
-        arrival_queue = ["agent_linked", "agent_unlinked"]
+    def test_meta_naming_an_unknown_tool_use_resolves_nothing(self, tmp_path: Path) -> None:
+        """A meta pointing at a tool_use this office never saw must not link anyone."""
+        agents = {"subagent_toolu_1": create_test_agent("subagent_toolu_1", native_id=None)}
 
         result = resolve_agent_for_stop(
             agents=agents,
-            arrival_queue=arrival_queue,
             agent_id=None,
-            native_agent_id="new_native_id",
+            native_agent_id="other_native_id",
+            transcript_path=write_meta(tmp_path, "other_native_id", "toolu_elsewhere"),
         )
 
-        assert result is not None
-        assert result.agent_id == "agent_unlinked"
-        assert result.agent.native_id == "new_native_id"
-
-    def test_fallback_link_agent_not_in_arrival_queue(self) -> None:
-        """Should still link agents not in arrival_queue as last resort."""
-        agents = {
-            "orphan_agent": create_test_agent("orphan_agent", native_id=None),
-        }
-        arrival_queue: list[str] = []  # Empty queue
-
-        result = resolve_agent_for_stop(
-            agents=agents,
-            arrival_queue=arrival_queue,
-            agent_id=None,
-            native_agent_id="new_native_id",
-        )
-
-        assert result is not None
-        assert result.agent_id == "orphan_agent"
-        assert result.agent.native_id == "new_native_id"
-        assert result.was_late_linked
+        assert result is None
+        assert agents["subagent_toolu_1"].native_id is None
 
     def test_returns_none_when_no_match_and_no_unlinked(self) -> None:
         """Should return None when agent not found and all agents are linked."""
@@ -159,11 +137,9 @@ class TestResolveAgentForStop:
             "agent_001": create_test_agent("agent_001", native_id="native_001"),
             "agent_002": create_test_agent("agent_002", native_id="native_002"),
         }
-        arrival_queue = ["agent_001", "agent_002"]
 
         result = resolve_agent_for_stop(
             agents=agents,
-            arrival_queue=arrival_queue,
             agent_id=None,
             native_agent_id="unknown_native_id",
         )
@@ -173,11 +149,9 @@ class TestResolveAgentForStop:
     def test_returns_none_when_no_ids_provided(self) -> None:
         """Should return None when neither agent_id nor native_agent_id provided."""
         agents = {"agent_001": create_test_agent("agent_001", native_id=None)}
-        arrival_queue = ["agent_001"]
 
         result = resolve_agent_for_stop(
             agents=agents,
-            arrival_queue=arrival_queue,
             agent_id=None,
             native_agent_id=None,
         )
@@ -187,11 +161,9 @@ class TestResolveAgentForStop:
     def test_returns_none_when_agent_id_not_found_and_no_native_id(self) -> None:
         """Should return None when agent_id not found and no native_id to fallback."""
         agents = {"agent_001": create_test_agent("agent_001", native_id=None)}
-        arrival_queue = ["agent_001"]
 
         result = resolve_agent_for_stop(
             agents=agents,
-            arrival_queue=arrival_queue,
             agent_id="nonexistent_agent",
             native_agent_id=None,
         )
@@ -201,11 +173,9 @@ class TestResolveAgentForStop:
     def test_empty_agents_returns_none(self) -> None:
         """Should return None when no agents exist."""
         agents: dict[str, Agent] = {}
-        arrival_queue: list[str] = []
 
         result = resolve_agent_for_stop(
             agents=agents,
-            arrival_queue=arrival_queue,
             agent_id=None,
             native_agent_id="any_id",
         )

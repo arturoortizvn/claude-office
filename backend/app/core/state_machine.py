@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from enum import Enum, auto
 from typing import Any, cast
 
+from app.core.jsonl_parser import get_subagent_tool_use_id
 from app.core.path_utils import compress_path, compress_paths_in_text, truncate_long_words
 from app.core.quotes import get_random_job_completion_quote
 from app.core.summary_service import get_summary_service
@@ -95,25 +96,26 @@ class ResolvedAgent:
 
 def resolve_agent_for_stop(
     agents: dict[str, Agent],
-    arrival_queue: list[str],
     agent_id: str | None,
     native_agent_id: str | None,
+    transcript_path: str | None = None,
 ) -> ResolvedAgent | None:
     """Resolve an agent for SUBAGENT_STOP by ID, native ID, or fallback linking.
 
     Resolution order:
     1. Direct agent_id match (synchronous agents)
     2. Native ID match (agents that received SubagentInfo)
-    3. Fallback: link oldest unlinked agent from arrival_queue (missed SubagentInfo)
+    3. Fallback: the agent whose tool_use_id the subagent's transcript meta names
+       (missed SubagentInfo)
 
-    The fallback prefers the oldest unlinked agent (FIFO) to handle cases where
-    multiple background agents started but SubagentInfo was missed for some.
+    Claude Code also fires SubagentStop for internal forks that never started
+    in this office, so an unmatched stop must not evict an arbitrary agent.
 
     Args:
         agents: Dict of agent_id -> Agent
-        arrival_queue: List of agent_ids in arrival order
         agent_id: Optional agent_id from event
         native_agent_id: Optional native_agent_id from event
+        transcript_path: Optional subagent transcript path from event
 
     Returns:
         ResolvedAgent if found, None otherwise
@@ -130,27 +132,19 @@ def resolve_agent_for_stop(
         if agent.native_id == native_agent_id:
             return ResolvedAgent(agent_id=aid, agent=agent)
 
-    # 3. Fallback: link oldest unlinked agent (FIFO from arrival_queue)
-    for aid in arrival_queue:
-        agent = agents.get(aid)
-        if agent and agent.native_id is None:
-            agent.native_id = native_agent_id
-            logger.info(
-                f"Late-linked agent {aid} to native ID {native_agent_id} (SubagentInfo was missed)"
-            )
-            return ResolvedAgent(agent_id=aid, agent=agent, was_late_linked=True)
+    # 3. Fallback: link the agent spawned by the tool_use the transcript meta names
+    if not transcript_path:
+        return None
+    from app.config import get_settings  # local import to avoid cycles
 
-    # 4. Last resort: any unlinked agent not in arrival_queue
-    for aid, agent in agents.items():
-        if agent.native_id is None:
-            agent.native_id = native_agent_id
-            logger.warning(
-                f"Late-linked orphan agent {aid} to native ID {native_agent_id} "
-                f"(not in arrival_queue)"
-            )
-            return ResolvedAgent(agent_id=aid, agent=agent, was_late_linked=True)
-
-    return None
+    tool_use_id = get_subagent_tool_use_id(get_settings().translate_path(transcript_path))
+    aid = f"subagent_{tool_use_id}"
+    agent = agents.get(aid) if tool_use_id else None
+    if agent is None or agent.native_id is not None:
+        return None
+    agent.native_id = native_agent_id
+    logger.info(f"Late-linked agent {aid} to native ID {native_agent_id} (SubagentInfo was missed)")
+    return ResolvedAgent(agent_id=aid, agent=agent, was_late_linked=True)
 
 
 # ---------------------------------------------------------------------------
@@ -355,9 +349,9 @@ def _handle_subagent_stop(sm: "StateMachine", event: AnyEvent) -> None:
     assert isinstance(event, AgentEvent)
     resolved = resolve_agent_for_stop(
         agents=sm.agents,
-        arrival_queue=sm.arrival_queue,
         agent_id=event.data.agent_id,
         native_agent_id=event.data.native_agent_id,
+        transcript_path=event.data.agent_transcript_path,
     )
 
     if resolved:
