@@ -3,7 +3,7 @@
 import json
 import logging
 from pathlib import Path
-from typing import TypedDict
+from typing import TypedDict, cast
 
 from app.core.path_utils import is_safe_transcript_path
 
@@ -86,6 +86,21 @@ def get_last_assistant_response(jsonl_path: str | Path) -> str | None:
         return None
 
     return last_text
+
+
+def get_subagent_tool_use_id(jsonl_path: str | Path) -> str | None:
+    """Return the spawning tool_use_id from a subagent transcript's sibling meta file."""
+    path = Path(jsonl_path)
+    if not is_safe_transcript_path(path):
+        return None
+    try:
+        meta = json.loads(path.with_suffix(".meta.json").read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(meta, dict):
+        return None
+    tool_use_id = cast(dict[str, object], meta).get("toolUseId")
+    return tool_use_id if isinstance(tool_use_id, str) else None
 
 
 def get_first_user_prompt(jsonl_path: str | Path) -> str | None:
