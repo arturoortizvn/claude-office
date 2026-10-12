@@ -10,7 +10,7 @@
  * out of scope for this ARC-018 cut.
  */
 import { beforeEach, describe, expect, it } from "vitest";
-import { resolveSpawn } from "@/systems/stateReconciler";
+import { forgetDepartedAgents, resolveSpawn } from "@/systems/stateReconciler";
 import { resetSpawnIndex } from "@/systems/queuePositions";
 import {
   ARRIVAL_QUEUE_POSITIONS,
@@ -158,5 +158,31 @@ describe("resolveSpawn", () => {
     expect(decision.queueIndex).toBe(1);
     // index 1 → getQueuePosition("arrival", 2) = ARRIVAL_QUEUE_POSITIONS[2].
     expect(decision.spawnPosition).toEqual(ARRIVAL_QUEUE_POSITIONS[2]);
+  });
+});
+
+describe("forgetDepartedAgents", () => {
+  it("forgets an agent gone from both the backend and the store so it can re-enter", () => {
+    const processed = new Set(["a1"]);
+
+    forgetDepartedAgents(processed, new Set(), new Set());
+
+    expect(processed.has("a1")).toBe(false);
+  });
+
+  it("keeps an agent still walking out of the office", () => {
+    const processed = new Set(["a1"]);
+
+    forgetDepartedAgents(processed, new Set(), new Set(["a1"]));
+
+    expect(processed.has("a1")).toBe(true);
+  });
+
+  it("keeps an agent the backend still reports", () => {
+    const processed = new Set(["a1"]);
+
+    forgetDepartedAgents(processed, new Set(["a1"]), new Set());
+
+    expect(processed.has("a1")).toBe(true);
   });
 });

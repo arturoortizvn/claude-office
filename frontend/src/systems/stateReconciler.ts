@@ -106,6 +106,19 @@ export function resolveSpawn(
   return { spawnPosition: getNextSpawnPosition(), skipArrival: false };
 }
 
+/** Drop agents that fully left the office so a resumed agent can re-enter. */
+export function forgetDepartedAgents(
+  processedAgents: Set<string>,
+  backendAgentIds: Set<string>,
+  storeAgentIds: Set<string>,
+): void {
+  for (const agentId of processedAgents) {
+    if (!backendAgentIds.has(agentId) && !storeAgentIds.has(agentId)) {
+      processedAgents.delete(agentId);
+    }
+  }
+}
+
 // ============================================================================
 // RECONCILIATION CONTEXT
 // ============================================================================
@@ -149,6 +162,7 @@ export function reconcileState(state: GameState, ctx: ReconcilerContext): void {
   const store = useGameStore.getState();
   const currentAgentIds = new Set(store.agents.keys());
   const backendAgentIds = new Set(state.agents.map((a) => a.id));
+  forgetDepartedAgents(ctx.processedAgents, backendAgentIds, currentAgentIds);
 
   // ---- Detect new agents (arrivals) ----
   for (const backendAgent of state.agents) {
