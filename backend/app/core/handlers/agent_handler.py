@@ -16,7 +16,11 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from app.core.broadcast_service import broadcast_state
-from app.core.jsonl_parser import get_first_user_prompt, get_last_assistant_response
+from app.core.jsonl_parser import (
+    get_first_user_prompt,
+    get_last_assistant_response,
+    get_subagent_tool_use_id,
+)
 from app.core.state_machine import StateMachine, resolve_agent_for_stop
 from app.core.summary_service import get_summary_service
 from app.core.transcript_poller import get_transcript_poller
@@ -34,6 +38,7 @@ __all__ = [
     "handle_subagent_info",
     "handle_subagent_stop",
     "handle_agent_update",
+    "agent_for_native_id",
     "enrich_agent_with_summaries",
     "enrich_agent_from_transcript",
     "extract_and_set_agent_speech",
@@ -135,12 +140,11 @@ async def handle_subagent_info(
             return
         sm.resume_requests.discard(native_agent_id)
 
-    # Synthesise a SUBAGENT_START if we have no agent tracking this native ID
-    # and there are no unlinked (native_id=None) agents already present.
-    already_tracked = any(a.native_id == native_agent_id for a in sm.agents.values())
-    if not already_tracked and not any(a.native_id is None for a in sm.agents.values()):
+    agent_id = agent_for_native_id(sm, native_agent_id, transcript_path)
+    if agent_id is None:
+        agent_id = f"subagent_{native_agent_id}"
         synthetic_data = AgentEventData(
-            agent_id=f"subagent_{native_agent_id}",
+            agent_id=agent_id,
             native_agent_id=native_agent_id,
             agent_transcript_path=transcript_path,
             agent_type=event.data.agent_type,
@@ -158,39 +162,48 @@ async def handle_subagent_info(
             f"(missed due to backend restart)"
         )
 
-    ensure_transcript_poller_fn()
-    poller = get_transcript_poller()
-    if poller:
-        for agent_id, agent in sm.agents.items():
-            # Link and enrich agents that have not yet been assigned a native_id.
-            if agent.native_id is None:
-                agent.native_id = native_agent_id
-                logger.info(f"Linked agent {agent_id} to native ID {native_agent_id}")
-                await enrich_agent_from_transcript(
-                    agent,
-                    transcript_path,
-                    event.data.agent_type,
-                    {a.name for aid, a in sm.agents.items() if aid != agent_id and a.name},
-                )
-            if not await poller.is_polling(agent_id):
-                logger.info(
-                    f"Starting transcript polling for {agent_id} "
-                    f"(native: {native_agent_id}) at {transcript_path}"
-                )
-                await poller.start_polling(agent_id, event.session_id, transcript_path)
-                break
-
-    # Also enrich the freshly synthesised agent (its native_id was already set
-    # by sm.transition above, so the loop above skips it via the None guard).
-    synth_id = f"subagent_{native_agent_id}"
-    synth_agent = sm.agents.get(synth_id)
-    if synth_agent and not synth_agent.current_task:
+    agent = sm.agents.get(agent_id)
+    if agent is None:
+        return
+    newly_linked = agent.native_id is None
+    if newly_linked:
+        agent.native_id = native_agent_id
+        logger.info(f"Linked agent {agent_id} to native ID {native_agent_id}")
+    if newly_linked or not agent.current_task:
         await enrich_agent_from_transcript(
-            synth_agent,
+            agent,
             transcript_path,
             event.data.agent_type,
-            {a.name for a in sm.agents.values() if a.name},
+            {a.name for aid, a in sm.agents.items() if aid != agent_id and a.name},
         )
+
+    ensure_transcript_poller_fn()
+    poller = get_transcript_poller()
+    if poller and not await poller.is_polling(agent_id):
+        logger.info(
+            f"Starting transcript polling for {agent_id} "
+            f"(native: {native_agent_id}) at {transcript_path}"
+        )
+        await poller.start_polling(agent_id, event.session_id, transcript_path)
+
+
+def agent_for_native_id(sm: StateMachine, native_agent_id: str, transcript_path: str) -> str | None:
+    """Return the office agent a SubagentInfo belongs to, or None to synthesize one."""
+    for aid, agent in sm.agents.items():
+        if agent.native_id == native_agent_id:
+            return aid
+
+    from app.config import get_settings  # local import to avoid cycles
+
+    tool_use_id = get_subagent_tool_use_id(get_settings().translate_path(transcript_path))
+    if tool_use_id:
+        # Parallel spawns announce themselves in any order; the meta file names
+        # the exact tool_use, so never fall back to "first unlinked" here.
+        aid = f"subagent_{tool_use_id}"
+        agent = sm.agents.get(aid)
+        return aid if agent is not None and agent.native_id is None else None
+
+    return next((aid for aid, a in sm.agents.items() if a.native_id is None), None)
 
 
 async def handle_subagent_stop(
