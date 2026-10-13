@@ -32,6 +32,7 @@ from app.core.broadcast_service import (
 from app.core.connection_manager import get_manager
 from app.core.floor_config import get_cached_building_config
 from app.core.handlers import (
+    agent_for_native_id,
     enrich_agent_from_transcript,
     ensure_task_poller_running,
     handle_agent_update,
@@ -851,18 +852,22 @@ class EventProcessor:
                         if evt.data.agent_transcript_path:
                             native_agent_id = evt.data.native_agent_id
                             transcript_path = evt.data.agent_transcript_path
-                            for agent in sm.agents.values():
-                                if agent.native_id == native_agent_id or agent.native_id is None:
-                                    if native_agent_id and agent.native_id is None:
-                                        agent.native_id = native_agent_id
-                                    if (
-                                        not agent.current_task
-                                        or agent.current_task == "Resumed mid-session"
-                                    ):
-                                        await enrich_agent_from_transcript(
-                                            agent, transcript_path, evt.data.agent_type
-                                        )
-                                    break
+                            linked_id = (
+                                agent_for_native_id(sm, native_agent_id, transcript_path)
+                                if native_agent_id
+                                else None
+                            )
+                            agent = sm.agents.get(linked_id) if linked_id else None
+                            if agent is not None:
+                                if agent.native_id is None:
+                                    agent.native_id = native_agent_id
+                                if (
+                                    not agent.current_task
+                                    or agent.current_task == "Resumed mid-session"
+                                ):
+                                    await enrich_agent_from_transcript(
+                                        agent, transcript_path, evt.data.agent_type
+                                    )
                 except Exception as e:
                     skipped_count += 1
                     logger.warning(

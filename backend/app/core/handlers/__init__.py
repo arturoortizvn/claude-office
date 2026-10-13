@@ -10,6 +10,7 @@ Each sub-module is responsible for a cohesive group of event types:
 """
 
 from app.core.handlers.agent_handler import (
+    agent_for_native_id,
     enrich_agent_from_transcript,
     enrich_agent_with_summaries,
     extract_and_set_agent_speech,
@@ -44,6 +45,7 @@ __all__ = [
     "ensure_task_poller_running",
     "derive_task_list_id_from_root",
     # agent
+    "agent_for_native_id",
     "handle_subagent_start",
     "handle_subagent_info",
     "handle_subagent_stop",
