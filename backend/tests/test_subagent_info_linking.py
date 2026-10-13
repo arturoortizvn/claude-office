@@ -97,6 +97,24 @@ async def test_parallel_agents_link_to_the_tool_use_that_spawned_them(tmp_path: 
     }
 
 
+async def test_parallel_info_waits_for_the_meta_written_after_the_hook(tmp_path: Path) -> None:
+    sm = StateMachine()
+    _start(sm, "toolu_a")
+    _start(sm, "toolu_b")
+    path_b = _transcript(tmp_path, "native_b", None)
+
+    async def write_meta_late() -> None:
+        await asyncio.sleep(0.12)
+        (tmp_path / "agent-native_b.meta.json").write_text(json.dumps({"toolUseId": "toolu_b"}))
+
+    writer = asyncio.create_task(write_meta_late())
+    await _info(sm, "native_b", path_b)
+    await writer
+
+    assert sm.agents["subagent_toolu_b"].native_id == "native_b"
+    assert sm.agents["subagent_toolu_a"].native_id is None
+
+
 async def test_each_agent_polls_its_own_transcript(
     tmp_path: Path, fake_poller: _FakePoller
 ) -> None:
