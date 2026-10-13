@@ -140,6 +140,7 @@ async def handle_subagent_info(
             return
         sm.resume_requests.discard(native_agent_id)
 
+    await _wait_for_meta_if_ambiguous(sm, native_agent_id, transcript_path)
     agent_id = agent_for_native_id(sm, native_agent_id, transcript_path)
     if agent_id is None:
         agent_id = f"subagent_{native_agent_id}"
@@ -185,6 +186,32 @@ async def handle_subagent_info(
             f"(native: {native_agent_id}) at {transcript_path}"
         )
         await poller.start_polling(agent_id, event.session_id, transcript_path)
+
+
+META_WAIT_ATTEMPTS = 20
+META_WAIT_INTERVAL_S = 0.05
+
+
+async def _wait_for_meta_if_ambiguous(
+    sm: StateMachine, native_agent_id: str, transcript_path: str
+) -> None:
+    """Give Claude Code time to write the meta file when several agents could match.
+
+    The SubagentStart hook fires ~120 ms before the meta file naming the
+    spawning tool_use exists; guessing earlier crosses parallel agents.
+    """
+    if any(a.native_id == native_agent_id for a in sm.agents.values()):
+        return
+    if sum(1 for a in sm.agents.values() if a.native_id is None) < 2:
+        return
+    from app.config import get_settings  # local import to avoid cycles
+
+    path = get_settings().translate_path(transcript_path)
+    for _ in range(META_WAIT_ATTEMPTS):
+        if await asyncio.to_thread(get_subagent_tool_use_id, path):
+            return
+        await asyncio.sleep(META_WAIT_INTERVAL_S)
+    logger.warning(f"No subagent meta for {native_agent_id}; linking may be ambiguous")
 
 
 def agent_for_native_id(sm: StateMachine, native_agent_id: str, transcript_path: str) -> str | None:
