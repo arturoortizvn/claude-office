@@ -10,12 +10,14 @@
 
 import { useState, useEffect, useMemo, type ReactNode } from "react";
 import type { TodoItem } from "@/types";
+import { getPlanSummary } from "./planSummary";
 
 export interface TodoListModeProps {
   todos: TodoItem[];
 }
 
 const MAX_VISIBLE = 5;
+const MAX_VISIBLE_WITH_HEADER = 4;
 
 function getStatusIcon(status: string): string {
   switch (status) {
@@ -42,41 +44,45 @@ function getStatusColor(status: string): string {
 export function TodoListMode({ todos }: TodoListModeProps): ReactNode {
   const [autoScrollOffset, setAutoScrollOffset] = useState(0);
 
+  const planSummary = useMemo(() => getPlanSummary(todos), [todos]);
+  const maxVisible = planSummary ? MAX_VISIBLE_WITH_HEADER : MAX_VISIBLE;
+  const rowOffset = planSummary ? 24 : 0;
+
   const inProgressIndex = todos.findIndex((t) => t.status === "in_progress");
 
   const baseOffset = useMemo(() => {
-    if (inProgressIndex >= 0 && todos.length > MAX_VISIBLE) {
+    if (inProgressIndex >= 0 && todos.length > maxVisible) {
       return Math.max(
         0,
         Math.min(
-          inProgressIndex - Math.floor(MAX_VISIBLE / 2),
-          todos.length - MAX_VISIBLE,
+          inProgressIndex - Math.floor(maxVisible / 2),
+          todos.length - maxVisible,
         ),
       );
     }
     return 0;
-  }, [inProgressIndex, todos.length]);
+  }, [inProgressIndex, todos.length, maxVisible]);
 
   const allCompleted =
     todos.length > 0 && todos.every((t) => t.status === "completed");
 
   useEffect(() => {
-    if (todos.length <= MAX_VISIBLE || inProgressIndex >= 0 || allCompleted) {
+    if (todos.length <= maxVisible || inProgressIndex >= 0 || allCompleted) {
       return;
     }
 
     const interval = setInterval(() => {
       setAutoScrollOffset((prev) => {
-        const maxOffset = todos.length - MAX_VISIBLE;
+        const maxOffset = todos.length - maxVisible;
         return prev >= maxOffset ? 0 : prev + 1;
       });
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [todos.length, inProgressIndex, allCompleted]);
+  }, [todos.length, inProgressIndex, allCompleted, maxVisible]);
 
   const scrollOffset = inProgressIndex >= 0 ? baseOffset : autoScrollOffset;
-  const visibleTodos = todos.slice(scrollOffset, scrollOffset + MAX_VISIBLE);
+  const visibleTodos = todos.slice(scrollOffset, scrollOffset + maxVisible);
 
   if (todos.length === 0) {
     return (
@@ -97,8 +103,25 @@ export function TodoListMode({ todos }: TodoListModeProps): ReactNode {
 
   return (
     <pixiContainer>
+      {planSummary && (
+        <pixiText
+          text={`${planSummary.title.slice(0, 30)} · ${planSummary.done}/${planSummary.total}`}
+          x={16}
+          y={2}
+          style={{
+            fontFamily: '"Courier New", monospace',
+            fontSize: 11,
+            fill: "#1f2937",
+            fontWeight: "bold",
+          }}
+          resolution={2}
+        />
+      )}
       {visibleTodos.map((todo, index) => (
-        <pixiContainer key={`todo-${scrollOffset + index}`} y={2 + index * 24}>
+        <pixiContainer
+          key={`todo-${scrollOffset + index}`}
+          y={2 + rowOffset + index * 24}
+        >
           <pixiText
             text={getStatusIcon(todo.status)}
             x={16}
@@ -127,10 +150,10 @@ export function TodoListMode({ todos }: TodoListModeProps): ReactNode {
         </pixiContainer>
       ))}
 
-      {todos.length > MAX_VISIBLE && (
+      {todos.length > maxVisible && (
         <pixiContainer x={165} y={130} scale={0.5}>
           <pixiText
-            text={`${scrollOffset + 1}-${Math.min(scrollOffset + MAX_VISIBLE, todos.length)}/${todos.length}`}
+            text={`${scrollOffset + 1}-${Math.min(scrollOffset + maxVisible, todos.length)}/${todos.length}`}
             anchor={0.5}
             style={{
               fontFamily: '"Courier New", monospace',
