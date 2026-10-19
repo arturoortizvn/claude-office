@@ -195,7 +195,7 @@ class RoomOrchestrator:
             )
 
         # Lead's kanban tasks
-        for task in lead_entry.sm.kanban_tasks.values():
+        for task in lead_entry.sm.kanban_view():
             all_kanban[task.task_id] = KanbanTask(
                 task_id=task.task_id,
                 subject=task.subject,
@@ -242,7 +242,7 @@ class RoomOrchestrator:
                 )
 
             # Teammate's kanban tasks
-            for task in entry.sm.kanban_tasks.values():
+            for task in entry.sm.kanban_view():
                 all_kanban[task.task_id] = KanbanTask(
                     task_id=task.task_id,
                     subject=task.subject,
