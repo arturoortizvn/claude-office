@@ -285,6 +285,9 @@ class EventProcessor:
         if not sm:
             return
 
+        if not todos:
+            return
+
         if sm.todos and not is_plan_todos(sm.todos):
             return
 

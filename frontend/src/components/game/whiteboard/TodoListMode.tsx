@@ -3,7 +3,8 @@
 /**
  * TodoListMode - Mode 0: Todo list with auto-scroll and status icons.
  *
- * Displays up to 5 visible todo items at a time. When a task is in_progress,
+ * Displays up to 5 visible todo items at a time (plan mode shows 4 rows
+ * under a title line). When a task is in_progress,
  * it centers that task in the viewport. Otherwise items auto-scroll every 3
  * seconds when the list exceeds the visible limit.
  */

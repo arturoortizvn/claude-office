@@ -163,6 +163,48 @@ async def test_real_todos_are_not_overwritten(
     assert broadcasts == []
 
 
+async def test_empty_plan_parse_keeps_current_todos(
+    poller: _FakePlanPoller, broadcasts: list[str]
+) -> None:
+    current = [_plan_todo("Task 1")]
+    processor, sm = _processor_with_sm(current)
+
+    await processor._handle_plan_update(  # pyright: ignore[reportPrivateUsage]
+        SESSION, []
+    )
+
+    assert sm.todos == current
+    assert broadcasts == []
+
+
+async def test_todowrite_then_plan_update_is_ignored(
+    poller: _FakePlanPoller, broadcasts: list[str]
+) -> None:
+    processor, sm = _processor_with_sm([_plan_todo("Task 1")])
+    event = ToolEvent(
+        event_type=EventType.PRE_TOOL_USE,
+        session_id=SESSION,
+        timestamp=datetime.now(UTC),
+        data=ToolEventData(
+            tool_name="TodoWrite",
+            tool_input={"todos": [{"content": "Real", "status": "pending"}]},
+        ),
+    )
+
+    await _process(processor, event)
+    written = list(sm.todos)
+    broadcasts.clear()
+
+    assert [t.content for t in written] == ["Real"]
+
+    await processor._handle_plan_update(  # pyright: ignore[reportPrivateUsage]
+        SESSION, [_plan_todo("Task 9")]
+    )
+
+    assert sm.todos == written
+    assert broadcasts == []
+
+
 async def test_session_end_stops_plan_polling(
     poller: _FakePlanPoller, broadcasts: list[str]
 ) -> None:
