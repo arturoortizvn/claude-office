@@ -49,6 +49,8 @@ from app.core.handlers import (
     handle_user_prompt_submit,
 )
 from app.core.jsonl_parser import get_last_assistant_response
+from app.core.plan_file_poller import get_plan_file_poller, init_plan_file_poller
+from app.core.plan_progress import extract_plan_path, is_plan_todos
 from app.core.product_mapper import get_product_mapper
 from app.core.room_orchestrator import RoomOrchestrator
 from app.core.state_machine import StateMachine
@@ -188,6 +190,7 @@ class EventProcessor:
         self._transcript_poller_initialized = False
         self._task_poller_initialized = False
         self._beads_poller_initialized = False
+        self._plan_poller_initialized = False
         self._beads_sessions: set[str] = set()  # Sessions with active beads polling
         # Coalesces Command Center overview broadcasts: bursts of events schedule
         # a single deferred flush instead of rebuilding the full peer-merge once
@@ -243,6 +246,12 @@ class EventProcessor:
             init_task_file_poller(self._handle_task_file_update)
             self._task_poller_initialized = True
 
+    def _ensure_plan_file_poller(self) -> None:
+        """Initialise the plan file poller if not already done."""
+        if not self._plan_poller_initialized:
+            init_plan_file_poller(self._handle_plan_update)
+            self._plan_poller_initialized = True
+
     def _ensure_beads_poller(self) -> None:
         """Initialise the beads poller if not already done."""
         if not self._beads_poller_initialized:
@@ -269,6 +278,33 @@ class EventProcessor:
 
         await save_tasks(session_id, todos)
         await broadcast_state(session_id, sm)
+
+    async def _handle_plan_update(self, session_id: str, todos: list[TodoItem]) -> None:
+        """Handle plan-file updates: show plan progress unless real todos exist."""
+        sm = self.sessions.get(session_id)
+        if not sm:
+            return
+
+        if sm.todos and not is_plan_todos(sm.todos):
+            return
+
+        if _todos_unchanged(sm.todos, todos):
+            return
+
+        sm.todos = todos
+        logger.debug(f"Updated plan todos for session {session_id}: {len(todos)} items")
+
+        await save_tasks(session_id, todos)
+        await broadcast_state(session_id, sm)
+
+    async def _track_plan_file(self, event: ToolEvent) -> None:
+        plan_path = extract_plan_path(event.data.tool_name, event.data.tool_input)
+        if not plan_path:
+            return
+        self._ensure_plan_file_poller()
+        poller = get_plan_file_poller()
+        if poller:
+            await poller.start_polling(event.session_id, plan_path)
 
     async def _handle_beads_update(self, session_id: str, todos: list[TodoItem]) -> None:
         """Handle beads issue updates: update SM and broadcast."""
@@ -447,6 +483,7 @@ class EventProcessor:
     async def _enrich_pre_tool_use(self, sm: StateMachine, event: AnyEvent, agent_id: str) -> None:
         assert isinstance(event, ToolEvent), "dispatch routes PRE_TOOL_USE only"
         await handle_pre_tool_use(sm, event, agent_id, self._get_event_summary(event))
+        await self._track_plan_file(event)
 
     async def _enrich_task_created(self, sm: StateMachine, event: AnyEvent, agent_id: str) -> None:
         assert isinstance(event, TaskEvent), "dispatch routes TASK_CREATED only"
@@ -609,6 +646,9 @@ class EventProcessor:
             if beads:
                 await beads.stop_polling(event.session_id)
             self._beads_sessions.discard(event.session_id)
+            plan_poller = get_plan_file_poller()
+            if plan_poller:
+                await plan_poller.stop_polling(event.session_id)
 
         # ------------------------------------------------------------------
         # Default state broadcast + history event notification
