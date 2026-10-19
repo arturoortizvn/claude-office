@@ -114,6 +114,8 @@ class TrackViewPoller(BasePoller[ProjectPollState]):
         return combined
 
     async def _emit(self, session_id: str) -> None:
+        if session_id not in self._subscriptions:
+            return
         try:
             await self._tasks_callback(session_id, self._combined(session_id))
         except Exception as e:
@@ -122,7 +124,7 @@ class TrackViewPoller(BasePoller[ProjectPollState]):
     async def _fetch(self, project_id: str) -> list[KanbanTask]:
         if self._user_id is None:
             self._user_id = await self._client.whoami()
-        done_since = (datetime.now(UTC) - DONE_WINDOW).isoformat()
+        done_since = (datetime.now(UTC) - DONE_WINDOW).strftime("%Y-%m-%dT%H:%M:%SZ")
         tasks: list[KanbanTask] = []
         seen: set[str] = set()
         for kind in QUERY_KINDS:

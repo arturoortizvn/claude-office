@@ -1,6 +1,7 @@
 """Tests for the project-keyed TrackView poller."""
 
 import asyncio
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -137,6 +138,7 @@ async def test_done_query_uses_seven_day_window(
     await asyncio.sleep(WAIT)
     sinces = {k: s for _, k, s in client.ticket_calls}
     assert sinces["todo"] is None and sinces["in_progress"] is None
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", sinces["done"] or "")
     parsed = datetime.fromisoformat(sinces["done"] or "")
     assert abs(parsed - (datetime.now(UTC) - timedelta(days=7))) < timedelta(minutes=1)
 
@@ -145,25 +147,37 @@ async def test_shared_project_fetched_once(
     poller: TrackViewPoller, client: FakeClient, recorder: Recorder
 ) -> None:
     client.tickets[("p1", "todo")] = [row("ONE-1")]
+    intervals = 4
     await poller.subscribe("s1", {"p1"})
-    await asyncio.sleep(INTERVAL * 2)
     await poller.subscribe("s2", {"p1"})
+    await asyncio.sleep(INTERVAL * (intervals + 0.5))
     await poller.stop_all()
     kinds = [k for _, k, _ in client.ticket_calls]
+    assert kinds.count("todo") <= intervals + 2
     assert kinds.count("todo") == kinds.count("done") == kinds.count("in_progress")
     assert [t.task_id for t in recorder.last("s1")] == ["ONE-1"]
     assert [t.task_id for t in recorder.last("s2")] == ["ONE-1"]
 
 
-async def test_two_sessions_one_fetch_per_interval(
-    poller: TrackViewPoller, client: FakeClient
+async def test_no_callback_after_unsubscribe(
+    poller: TrackViewPoller, client: FakeClient, recorder: Recorder
 ) -> None:
     await poller.subscribe("s1", {"p1"})
     await poller.subscribe("s2", {"p1"})
-    await asyncio.sleep(INTERVAL * 0.5)
-    await poller.stop_all()
-    kinds = [k for _, k, _ in client.ticket_calls]
-    assert kinds.count("todo") <= 2
+    await asyncio.sleep(INTERVAL * 2)
+    base = recorder.__call__
+
+    async def hook(session_id: str, tasks: list[KanbanTask]) -> None:
+        await base(session_id, tasks)
+        if session_id == "s1" and tasks:
+            await poller.unsubscribe_session("s2")
+
+    poller._tasks_callback = hook  # type: ignore[reportPrivateUsage]
+    before = len([1 for s, _ in recorder.calls if s == "s2"])
+    client.tickets[("p1", "todo")] = [row("ONE-1")]
+    await asyncio.sleep(WAIT)
+    assert any(s == "s1" and t for s, t in recorder.calls)
+    assert len([1 for s, _ in recorder.calls if s == "s2"]) == before
 
 
 async def test_session_gets_union_of_its_projects(
