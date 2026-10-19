@@ -4,6 +4,7 @@ import secrets
 from functools import cache, lru_cache
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _BACKEND_DIR = Path(__file__).parent.parent.resolve()
@@ -79,7 +80,7 @@ class Settings(BaseSettings):
 
     TRACKVIEW_API_TOKEN: str = ""
     TRACKVIEW_MCP_URL: str = "https://trackview.viewnear.com/api/mcp"
-    TRACKVIEW_POLL_INTERVAL: float = 60.0
+    TRACKVIEW_POLL_INTERVAL: float = Field(default=60.0, ge=10)
 
     # Max events accepted per session_id per 60s sliding window (ARC-016).
     # Keyed per-session so one busy Claude Code session cannot starve another;

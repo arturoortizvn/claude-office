@@ -82,10 +82,8 @@ class TrackViewPoller(BasePoller[ProjectPollState]):
     async def subscribe(self, session_id: str, project_ids: set[str]) -> None:
         current = self._subscriptions.setdefault(session_id, set())
         new = project_ids - current
-        if not new:
-            return
         current |= new
-        for project_id in new:
+        for project_id in sorted(new):
             if await self.is_polling(project_id):
                 async with self._lock:
                     state = self._sessions.get(project_id)
@@ -97,7 +95,12 @@ class TrackViewPoller(BasePoller[ProjectPollState]):
                     ProjectPollState(project_id),
                     task_name=f"trackview_poll_{project_id}",
                 )
+            if self._subscriptions.get(session_id) is not current:
+                return
         await self._emit(session_id)
+
+    def subscribed_session_ids(self) -> list[str]:
+        return list(self._subscriptions)
 
     async def unsubscribe_session(self, session_id: str) -> None:
         projects = self._subscriptions.pop(session_id, set())

@@ -233,3 +233,41 @@ async def test_singleton(
     monkeypatch.setattr(trackview_poller, "_trackview_poller", None)
     p = init_trackview_poller(client, recorder, INTERVAL)  # type: ignore[arg-type]
     assert get_trackview_poller() is p
+
+
+async def test_resubscribe_same_project_emits_current_tasks(
+    poller: TrackViewPoller, client: FakeClient, recorder: Recorder
+) -> None:
+    client.tickets[("p1", "todo")] = [row("ONE-1")]
+    await poller.subscribe("s1", {"p1"})
+    await asyncio.sleep(WAIT)
+    before = len(recorder.calls)
+
+    await poller.subscribe("s1", {"p1"})
+
+    assert len(recorder.calls) == before + 1
+    assert [t.task_id for t in recorder.last("s1")] == ["ONE-1"]
+
+
+async def test_unsubscribe_during_subscribe_leaves_no_orphan_poll(
+    poller: TrackViewPoller, client: FakeClient
+) -> None:
+    await poller.subscribe("other", {"p1"})
+    gate = asyncio.Event()
+    entered = asyncio.Event()
+    original = client.list_tickets
+
+    async def gated(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        entered.set()
+        await gate.wait()
+        return await original(*args, **kwargs)
+
+    client.list_tickets = gated  # type: ignore[method-assign]
+    task = asyncio.create_task(poller.subscribe("s1", {"p1", "p2"}))
+    await entered.wait()
+    await poller.unsubscribe_session("s1")
+    gate.set()
+    await task
+
+    assert not await poller.is_polling("p2")
+    assert "s1" not in poller._subscriptions  # type: ignore[reportPrivateUsage]

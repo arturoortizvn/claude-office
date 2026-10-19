@@ -401,11 +401,19 @@ class EventProcessor:
                     if orchestrator.is_empty:
                         del self.orchestrators[sm.room_id]
             self.sessions.pop(session_id, None)
+        trackview = get_trackview_poller()
+        if trackview:
+            await trackview.unsubscribe_session(session_id)
 
     async def clear_all_sessions(self) -> None:
         """Clear all in-memory session state."""
         async with self._sessions_lock:
+            dropped = set(self.sessions)
             self.sessions.clear()
+        trackview = get_trackview_poller()
+        if trackview:
+            for sid in dropped | set(trackview.subscribed_session_ids()):
+                await trackview.unsubscribe_session(sid)
 
     async def evict_idle_sessions(self, max_idle_seconds: float) -> int:
         """Drop in-memory StateMachines idle longer than ``max_idle_seconds``.
@@ -426,6 +434,10 @@ class EventProcessor:
             ]
             for sid in stale:
                 self.sessions.pop(sid, None)
+        trackview = get_trackview_poller()
+        if trackview:
+            for sid in stale:
+                await trackview.unsubscribe_session(sid)
         return len(stale)
 
     async def get_current_state(self, session_id: str) -> GameState | None:
@@ -784,8 +796,11 @@ class EventProcessor:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
-        for pending in list(self._trackview_tasks):
+        pending_tasks = list(self._trackview_tasks)
+        for pending in pending_tasks:
             pending.cancel()
+        if pending_tasks:
+            await asyncio.gather(*pending_tasks, return_exceptions=True)
         if self._trackview_client is not None:
             trackview = get_trackview_poller()
             if trackview:

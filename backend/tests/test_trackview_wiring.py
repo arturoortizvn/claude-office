@@ -2,7 +2,7 @@
 
 import asyncio
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -13,6 +13,7 @@ from app.core import event_processor
 from app.core.event_processor import EventProcessor
 from app.core.state_machine import StateMachine
 from app.core.trackview_mapping import TrackViewRefs
+from app.core.trackview_poller import TrackViewPoller
 from app.db.database import Base, override_engine
 from app.models.events import (
     AnyEvent,
@@ -48,6 +49,9 @@ class _FakePoller:
 
     async def unsubscribe_session(self, session_id: str) -> None:
         self.unsubscribed.append(session_id)
+
+    def subscribed_session_ids(self) -> list[str]:
+        return []
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -239,3 +243,105 @@ async def test_session_end_unsubscribes(
     await _process(EventProcessor(), _end_event())
 
     assert fake.unsubscribed == [SESSION]
+
+
+class _WiringClient:
+    async def whoami(self) -> str:
+        return "user-1"
+
+    async def list_projects(self) -> list[dict[str, Any]]:
+        return [{"id": "proj-1", "keyPrefix": "BSA"}]
+
+    async def list_boards(self, project_id: str) -> list[dict[str, Any]]:
+        return []
+
+    async def list_tickets(
+        self,
+        project_id: str,
+        assignee_id: str,
+        column_kind: str,
+        updated_since: str | None = None,
+    ) -> list[dict[str, Any]]:
+        if column_kind != "todo":
+            return []
+        return [
+            {"key": "BSA-1", "title": "T", "column": "Backlog", "updatedAt": "2026-01-01T00:00:00Z"}
+        ]
+
+
+async def _until(predicate: Any, timeout: float = 2.0) -> None:
+    deadline = time.monotonic() + timeout
+    while not predicate() and time.monotonic() < deadline:
+        await asyncio.sleep(0.01)
+
+
+async def test_evicted_session_unsubscribes_and_restored_session_repopulates(
+    monkeypatch: pytest.MonkeyPatch, broadcasts: list[str]
+) -> None:
+    processor = EventProcessor()
+    poller = TrackViewPoller(_WiringClient(), processor._handle_trackview_update, 60.0)  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        EventProcessor,
+        "_ensure_trackview_poller",
+        lambda _self: True,  # type: ignore[misc]
+    )
+    monkeypatch.setattr(event_processor, "get_trackview_poller", lambda: poller)
+    try:
+        sm = StateMachine()
+        processor.sessions[SESSION] = sm
+        await poller.subscribe(SESSION, {"proj-1"})
+        await _until(lambda: sm.trackview_tasks)
+        assert [t.task_id for t in sm.trackview_tasks] == ["BSA-1"]
+
+        sm.last_event_at = datetime.now(UTC) - timedelta(hours=12)
+        assert await processor.evict_idle_sessions(max_idle_seconds=60) == 1
+        assert SESSION not in poller._subscriptions  # pyright: ignore[reportPrivateUsage]
+        assert not await poller.is_polling("proj-1")
+
+        await _process(processor, _tool_event("mcp__trackview__get_ticket", {"key": "BSA-1"}))
+        await _drain(processor)
+
+        restored = processor.sessions[SESSION]
+        await _until(lambda: restored.trackview_tasks)
+        assert restored is not sm
+        assert [t.task_id for t in restored.trackview_tasks] == ["BSA-1"]
+    finally:
+        await poller.stop_all()
+
+
+async def test_remove_session_unsubscribes(
+    monkeypatch: pytest.MonkeyPatch, broadcasts: list[str]
+) -> None:
+    fake = _FakePoller()
+    _enable(monkeypatch, fake)
+    processor = EventProcessor()
+    processor.sessions[SESSION] = StateMachine()
+
+    await processor.remove_session(SESSION)
+
+    assert fake.unsubscribed == [SESSION]
+
+
+async def test_clear_all_sessions_unsubscribes_subscribed_sessions(
+    monkeypatch: pytest.MonkeyPatch, broadcasts: list[str]
+) -> None:
+    fake = _FakePoller()
+    _enable(monkeypatch, fake)
+    processor = EventProcessor()
+    processor.sessions["a"] = StateMachine()
+    processor.sessions["b"] = StateMachine()
+
+    await processor.clear_all_sessions()
+
+    assert sorted(fake.unsubscribed) == ["a", "b"]
+    assert processor.sessions == {}
+
+
+def test_poll_interval_has_lower_bound() -> None:
+    from pydantic import ValidationError
+
+    from app.config import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(TRACKVIEW_POLL_INTERVAL=0)
+    assert Settings(TRACKVIEW_POLL_INTERVAL=10).TRACKVIEW_POLL_INTERVAL == 10
