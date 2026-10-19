@@ -89,6 +89,19 @@ echo "CLAUDE_CODE_OAUTH_TOKEN=your-token-here" > backend/.env
 
 > **Note:** Without this token, the visualizer works fully but displays raw agent IDs instead of generated names, and tool names instead of task summaries. The frontend displays AI status in the top right corner so you can verify if it's properly configured.
 
+#### TrackView tickets on the Kanban (optional)
+
+If you use TrackView, the whiteboard Kanban (`K`) can show your own tickets for the project a session is working on. Add your personal TrackView API token to `backend/.env`:
+
+```bash
+TRACKVIEW_API_TOKEN=your-trackview-token
+# Optional overrides
+TRACKVIEW_MCP_URL=https://trackview.viewnear.com/api/mcp
+TRACKVIEW_POLL_INTERVAL=60
+```
+
+The feature activates the first time a session calls a TrackView MCP tool (`mcp__trackview__*`): the project is inferred from the ticket key, project id or board id in that call, and your tickets in it refresh every `TRACKVIEW_POLL_INTERVAL` seconds. It is read-only. Keep the token in `backend/.env` only — never in a `NEXT_PUBLIC_*` variable — and leave it unset to turn the feature off.
+
 ### Step 4: Verify Hooks Installation
 
 ```bash
