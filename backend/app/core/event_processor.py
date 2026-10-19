@@ -56,6 +56,9 @@ from app.core.room_orchestrator import RoomOrchestrator
 from app.core.state_machine import StateMachine
 from app.core.task_file_poller import init_task_file_poller
 from app.core.task_persistence import load_tasks, save_tasks
+from app.core.trackview_client import TrackViewClient
+from app.core.trackview_mapping import TrackViewRefs, extract_trackview_refs
+from app.core.trackview_poller import get_trackview_poller, init_trackview_poller
 from app.core.transcript_poller import init_transcript_poller
 from app.db.database import AsyncSessionLocal
 from app.db.models import EventRecord, SessionRecord
@@ -74,7 +77,7 @@ from app.models.events import (
     ToolEvent,
 )
 from app.models.overview import OverviewState
-from app.models.sessions import ConversationEntry, GameState, HistoryEntry
+from app.models.sessions import ConversationEntry, GameState, HistoryEntry, KanbanTask
 from app.services.git_service import git_service
 
 logger = logging.getLogger(__name__)
@@ -191,6 +194,9 @@ class EventProcessor:
         self._task_poller_initialized = False
         self._beads_poller_initialized = False
         self._plan_poller_initialized = False
+        self._trackview_client: TrackViewClient | None = None
+        self._trackview_tasks: set[asyncio.Task[None]] = set()
+        self._trackview_ended: set[str] = set()
         self._beads_sessions: set[str] = set()  # Sessions with active beads polling
         # Coalesces Command Center overview broadcasts: bursts of events schedule
         # a single deferred flush instead of rebuilding the full peer-merge once
@@ -252,6 +258,19 @@ class EventProcessor:
             init_plan_file_poller(self._handle_plan_update)
             self._plan_poller_initialized = True
 
+    def _ensure_trackview_poller(self) -> bool:
+        """Lazily build the TrackView poller; False when the feature is off."""
+        settings = get_settings()
+        if not settings.TRACKVIEW_API_TOKEN:
+            return False
+        if self._trackview_client is None:
+            client = TrackViewClient(settings.TRACKVIEW_MCP_URL, settings.TRACKVIEW_API_TOKEN)
+            init_trackview_poller(
+                client, self._handle_trackview_update, settings.TRACKVIEW_POLL_INTERVAL
+            )
+            self._trackview_client = client
+        return True
+
     def _ensure_beads_poller(self) -> None:
         """Initialise the beads poller if not already done."""
         if not self._beads_poller_initialized:
@@ -308,6 +327,33 @@ class EventProcessor:
         poller = get_plan_file_poller()
         if poller:
             await poller.start_polling(event.session_id, plan_path)
+
+    async def _handle_trackview_update(self, session_id: str, tasks: list[KanbanTask]) -> None:
+        sm = self.sessions.get(session_id)
+        if not sm or sm.trackview_tasks == tasks:
+            return
+        sm.trackview_tasks = tasks
+        await broadcast_state(session_id, sm)
+
+    def _track_trackview_refs(self, event: ToolEvent) -> None:
+        refs = extract_trackview_refs(event.data.tool_name, event.data.tool_input)
+        if refs.is_empty or not self._ensure_trackview_poller():
+            return
+        task = asyncio.create_task(self._subscribe_trackview(event.session_id, refs))
+        self._trackview_tasks.add(task)
+        task.add_done_callback(self._trackview_tasks.discard)
+
+    async def _subscribe_trackview(self, session_id: str, refs: TrackViewRefs) -> None:
+        poller = get_trackview_poller()
+        if poller is None:
+            return
+        try:
+            project_ids = await poller.resolve(refs)
+            # SESSION_END may have been processed while resolve was awaiting
+            if project_ids and session_id not in self._trackview_ended:
+                await poller.subscribe(session_id, project_ids)
+        except Exception as exc:
+            logger.warning(f"TrackView subscription failed for {session_id}: {type(exc).__name__}")
 
     async def _handle_beads_update(self, session_id: str, todos: list[TodoItem]) -> None:
         """Handle beads issue updates: update SM and broadcast."""
@@ -487,6 +533,7 @@ class EventProcessor:
         assert isinstance(event, ToolEvent), "dispatch routes PRE_TOOL_USE only"
         await handle_pre_tool_use(sm, event, agent_id, self._get_event_summary(event))
         await self._track_plan_file(event)
+        self._track_trackview_refs(event)
 
     async def _enrich_task_created(self, sm: StateMachine, event: AnyEvent, agent_id: str) -> None:
         assert isinstance(event, TaskEvent), "dispatch routes TASK_CREATED only"
@@ -617,6 +664,7 @@ class EventProcessor:
         # SESSION_START – start task-file polling + beads polling
         # ------------------------------------------------------------------
         if event.event_type == EventType.SESSION_START:
+            self._trackview_ended.discard(event.session_id)
             await handle_session_start(sm, event, self._ensure_task_file_poller)
             await self._start_beads_if_available(event.session_id)
             # Configure git service immediately so polling starts without waiting
@@ -652,6 +700,10 @@ class EventProcessor:
             plan_poller = get_plan_file_poller()
             if plan_poller:
                 await plan_poller.stop_polling(event.session_id)
+            self._trackview_ended.add(event.session_id)
+            trackview = get_trackview_poller()
+            if trackview:
+                await trackview.unsubscribe_session(event.session_id)
 
         # ------------------------------------------------------------------
         # Default state broadcast + history event notification
@@ -732,6 +784,13 @@ class EventProcessor:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+        for pending in list(self._trackview_tasks):
+            pending.cancel()
+        if self._trackview_client is not None:
+            trackview = get_trackview_poller()
+            if trackview:
+                await trackview.stop_all()
+            await self._trackview_client.aclose()
 
     async def build_overview_snapshot(self) -> OverviewState:
         """Build a cross-session overview under ``_sessions_lock``.

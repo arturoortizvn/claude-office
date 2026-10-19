@@ -591,6 +591,7 @@ class StateMachine:
     kanban_tasks: dict[str, KanbanTask] = field(
         default_factory=lambda: cast(dict[str, KanbanTask], {})
     )
+    trackview_tasks: list[KanbanTask] = field(default_factory=lambda: cast(list[KanbanTask], []))
 
     # Whiteboard tracking delegated to WhiteboardTracker
     whiteboard: WhiteboardTracker = field(default_factory=WhiteboardTracker)
@@ -619,6 +620,9 @@ class StateMachine:
         self.conversation.append(entry)
         if len(self.conversation) > max_len:
             self.conversation = self.conversation[-max_len:]
+
+    def kanban_view(self) -> list[KanbanTask]:
+        return list(self.trackview_tasks) or list(self.kanban_tasks.values())
 
     def to_game_state(self, session_id: str) -> GameState:
         """Convert current state to a GameState for frontend consumption.
@@ -678,7 +682,7 @@ class StateMachine:
             coffee_cups=self.whiteboard.coffee_cups,
             file_edits=self.whiteboard.get_file_edits_snapshot(),
             background_tasks=self.whiteboard.get_background_tasks_snapshot(),
-            kanban_tasks=list(self.kanban_tasks.values()),
+            kanban_tasks=self.kanban_view(),
         )
 
         return GameState(
