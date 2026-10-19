@@ -77,6 +77,10 @@ class Settings(BaseSettings):
     # consistent validation/discovery.
     BEADS_POLL_INTERVAL: float = 3.0
 
+    TRACKVIEW_API_TOKEN: str = ""
+    TRACKVIEW_MCP_URL: str = "https://trackview.viewnear.com/api/mcp"
+    TRACKVIEW_POLL_INTERVAL: float = 60.0
+
     # Max events accepted per session_id per 60s sliding window (ARC-016).
     # Keyed per-session so one busy Claude Code session cannot starve another;
     # the previous global 300/60s default throttled the wrong dimension.
