@@ -110,3 +110,26 @@ def test_is_plan_todos() -> None:
     assert is_plan_todos([]) is False
     assert is_plan_todos([plan_item, plan_item]) is True
     assert is_plan_todos([plan_item, other]) is False
+
+
+def test_fenced_comment_does_not_end_task_section() -> None:
+    md = (
+        "# P\n\n### Task 1: A\n- [x] a\n\n```bash\n# Expected: FAIL\n"
+        "- [ ] fake\n### Task 9: fake\n```\n\n- [x] b\n\n### Task 2: B\n- [ ] c\n"
+    )
+    todos = parse_plan(md, PLAN_PATH)
+    assert [(t.task_id, t.status) for t in todos] == [
+        ("1", TodoStatus.COMPLETED),
+        ("2", TodoStatus.IN_PROGRESS),
+    ]
+
+
+def test_title_ignores_fenced_heading() -> None:
+    md = "```bash\n# not a title\n```\n\n# Real Implementation Plan\n\n### Task 1: A\n- [ ] a\n"
+    todos = parse_plan(md, "/r/docs/plans/my-plan.md")
+    assert todos[0].metadata is not None
+    assert todos[0].metadata["plan_title"] == "Real"
+    md2 = "```bash\n# not a title\n```\n\n### Task 1: A\n- [ ] a\n"
+    todos2 = parse_plan(md2, "/r/docs/plans/my-plan.md")
+    assert todos2[0].metadata is not None
+    assert todos2[0].metadata["plan_title"] == "my-plan"

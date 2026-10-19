@@ -14,6 +14,7 @@ _TITLE_RE = re.compile(r"^# (.+?)\s*$")
 _TASK_RE = re.compile(r"^#{2,3} Task (\d+):\s*(.+?)\s*$")
 _SECTION_END_RE = re.compile(r"^#{1,3}(?:\s|$)")
 _CHECKBOX_RE = re.compile(r"^\s*[-*] \[( |x|X)\]")
+_FENCE_RE = re.compile(r"^\s*(```|~~~)")
 _TITLE_SUFFIX = " Implementation Plan"
 
 
@@ -30,6 +31,23 @@ def is_plan_todos(todos: list[TodoItem]) -> bool:
     return bool(todos) and all((t.metadata or {}).get("source") == PLAN_SOURCE for t in todos)
 
 
+def _outside_fences(lines: list[str]) -> list[str]:
+    """Blank out fenced lines so they never match headings or checkboxes."""
+    result: list[str] = []
+    fence: str | None = None
+    for line in lines:
+        marker = _FENCE_RE.match(line)
+        if fence is None:
+            if marker:
+                fence = marker.group(1)
+            result.append("" if marker else line)
+        else:
+            if marker and marker.group(1) == fence:
+                fence = None
+            result.append("")
+    return result
+
+
 def _plan_title(lines: list[str], plan_path: str) -> str:
     for line in lines:
         match = _TITLE_RE.match(line)
@@ -40,7 +58,7 @@ def _plan_title(lines: list[str], plan_path: str) -> str:
 
 
 def parse_plan(markdown: str, plan_path: str) -> list[TodoItem]:
-    lines = markdown.splitlines()
+    lines = _outside_fences(markdown.splitlines())
     title = _plan_title(lines, plan_path)
 
     tasks: list[tuple[str, str]] = []
