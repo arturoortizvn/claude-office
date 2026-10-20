@@ -141,6 +141,11 @@ def get_first_user_prompt(jsonl_path: str | Path) -> str | None:
                         continue
 
                     content_list = message.get("content", [])
+                    # Subagent transcripts store the first prompt as a plain string.
+                    if isinstance(content_list, str):
+                        if content_list:
+                            return content_list
+                        continue
                     # Collect text blocks, skipping tool_result-only messages
                     texts = [
                         c.get("text", "")
