@@ -284,6 +284,10 @@ const ptBR: Record<TranslationKey, string> = {
   "settings.filterError": "Erros e paradas",
   "settings.filterTaskComplete": "Tarefas concluídas",
   "settings.filterArrival": "Chegadas de agentes",
+  "settings.dismissTaskComplete": "Tarefas concluídas",
+  "settings.dismissInfo": "Chegadas de agentes e tarefas em segundo plano",
+  "settings.dismissNote":
+    "Pedidos de permissão, erros e paradas ficam até serem descartados.",
 };
 
 export default ptBR;

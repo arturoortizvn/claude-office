@@ -282,6 +282,10 @@ const en = {
   "settings.filterError": "Errors and stops",
   "settings.filterTaskComplete": "Task completions",
   "settings.filterArrival": "Agent arrivals",
+  "settings.dismissTaskComplete": "Task completions",
+  "settings.dismissInfo": "Agent arrivals and background tasks",
+  "settings.dismissNote":
+    "Permission requests, errors and stops stay until dismissed.",
 } as const;
 
 export type TranslationKey = keyof typeof en;
