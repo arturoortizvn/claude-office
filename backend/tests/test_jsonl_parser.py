@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from app.core.jsonl_parser import get_last_assistant_response
+from app.core.jsonl_parser import get_first_user_prompt, get_last_assistant_response
 
 
 class TestGetLastAssistantResponse:
@@ -61,3 +61,37 @@ class TestGetLastAssistantResponse:
         jsonl_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         result = get_last_assistant_response(jsonl_path)
         assert result == "Text response"
+
+
+class TestGetFirstUserPrompt:
+    """Tests for get_first_user_prompt function."""
+
+    def test_string_content_returned(self, temp_dir: Path) -> None:
+        """Subagent transcripts store the first prompt as a plain string."""
+        jsonl_path = temp_dir / "subagent.jsonl"
+        jsonl_path.write_text(
+            '{"type": "user", "message": {"role": "user", "content": "Write the spec"}}\n',
+            encoding="utf-8",
+        )
+        assert get_first_user_prompt(jsonl_path) == "Write the spec"
+
+    def test_text_blocks_joined(self, temp_dir: Path) -> None:
+        """List content should join its text blocks."""
+        jsonl_path = temp_dir / "blocks.jsonl"
+        jsonl_path.write_text(
+            '{"type": "user", "message": {"role": "user", "content": '
+            '[{"type": "text", "text": "a"}, {"type": "text", "text": "b"}]}}\n',
+            encoding="utf-8",
+        )
+        assert get_first_user_prompt(jsonl_path) == "a\nb"
+
+    def test_tool_result_only_skipped(self, temp_dir: Path) -> None:
+        """Tool-result-only messages should be skipped."""
+        jsonl_path = temp_dir / "tool_result.jsonl"
+        lines = [
+            '{"type": "user", "message": {"role": "user", "content": '
+            '[{"type": "tool_result", "content": "x"}]}}',
+            '{"type": "user", "message": {"role": "user", "content": "Real prompt"}}',
+        ]
+        jsonl_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        assert get_first_user_prompt(jsonl_path) == "Real prompt"
