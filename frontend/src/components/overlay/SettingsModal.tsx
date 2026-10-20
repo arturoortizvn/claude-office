@@ -67,6 +67,42 @@ function SettingsToggle({
   );
 }
 
+const TOAST_DISMISS_OPTIONS_MS = [3000, 5000, 10000, 30000] as const;
+
+function SettingsDurationPicker({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (ms: number) => void;
+}): ReactNode {
+  return (
+    <div className="p-2.5 rounded-lg bg-slate-800 border border-slate-700">
+      <p className="text-slate-300 text-sm mb-2">{label}</p>
+      <div className="flex gap-2" role="radiogroup" aria-label={label}>
+        {TOAST_DISMISS_OPTIONS_MS.map((ms) => (
+          <button
+            key={ms}
+            type="button"
+            role="radio"
+            aria-checked={value === ms}
+            onClick={() => onChange(ms)}
+            className={`flex-1 px-2 py-1.5 rounded-md border text-xs font-bold transition-colors focus-visible:ring-2 focus-visible:ring-purple-500 outline-none ${
+              value === ms
+                ? "bg-purple-500/20 border-purple-500 text-purple-300"
+                : "bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600"
+            }`}
+          >
+            {ms / 1000}s
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ============================================================================
 // COMPONENT
 // ============================================================================
@@ -123,6 +159,16 @@ export default function SettingsModal({
   );
   const setToastFilterArrival = usePreferencesStore(
     (s) => s.setToastFilterArrival,
+  );
+  const toastAutoDismissLow = usePreferencesStore((s) => s.toastAutoDismissLow);
+  const toastAutoDismissInfo = usePreferencesStore(
+    (s) => s.toastAutoDismissInfo,
+  );
+  const setToastAutoDismissLow = usePreferencesStore(
+    (s) => s.setToastAutoDismissLow,
+  );
+  const setToastAutoDismissInfo = usePreferencesStore(
+    (s) => s.setToastAutoDismissInfo,
   );
 
   const { t } = useTranslation();
@@ -438,6 +484,28 @@ export default function SettingsModal({
                 onChange={() => setToastFilterArrival(!toastFilterArrival)}
               />
             </div>
+          </div>
+
+          {/* Toast auto-dismiss timing */}
+          <div className="pt-4 border-t border-slate-800">
+            <label className="block text-slate-400 text-xs font-bold uppercase tracking-wider mb-3">
+              {t("settings.toastAutoDismiss")}
+            </label>
+            <div className="space-y-2">
+              <SettingsDurationPicker
+                label={t("settings.dismissTaskComplete")}
+                value={toastAutoDismissLow}
+                onChange={setToastAutoDismissLow}
+              />
+              <SettingsDurationPicker
+                label={t("settings.dismissInfo")}
+                value={toastAutoDismissInfo}
+                onChange={setToastAutoDismissInfo}
+              />
+            </div>
+            <p className="text-slate-500 text-xs mt-2">
+              {t("settings.dismissNote")}
+            </p>
           </div>
 
           {/* Tip */}

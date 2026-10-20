@@ -284,6 +284,10 @@ const es: Record<TranslationKey, string> = {
   "settings.filterError": "Errores y paradas",
   "settings.filterTaskComplete": "Tareas completadas",
   "settings.filterArrival": "Llegadas de agentes",
+  "settings.dismissTaskComplete": "Tareas completadas",
+  "settings.dismissInfo": "Llegadas de agentes y tareas en segundo plano",
+  "settings.dismissNote":
+    "Las solicitudes de permiso, errores y paradas se quedan hasta que las cierres.",
 };
 
 export default es;
